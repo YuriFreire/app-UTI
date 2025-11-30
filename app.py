@@ -193,13 +193,11 @@ def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
             
     if complemento_usuario:
         if "{" in frase:
-            # Encontra placeholder e substitui
             inicio = frase.find("{")
             fim = frase.find("}")
             if inicio != -1 and fim != -1:
                 frase = frase[:inicio] + complemento_usuario + frase[fim+1:]
         else:
-            # Anexa se não tiver placeholder
             frase += f" {complemento_usuario}"
             
     return re.sub(r'\{.*?\}', '', frase).strip()
@@ -233,11 +231,14 @@ def extrair_texto_anterior(texto_completo):
     return resultado
 
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
-    """Remove vitais e/ou laboratórios antigos para evitar duplicidade"""
+    """
+    Remove padrões de vitais antigos (TAX, Diurese, BH) se novos forem fornecidos.
+    Se novos Labs forem fornecidos, remove o bloco de labs antigo.
+    """
     if not texto: return ""
     novo_texto = texto
     
-    # Vitais
+    # 1. Limpa Vitais (Se houver novos)
     if dados_novos.get('tax'):
         novo_texto = re.sub(r"TAX:\s*[\d.,]+\s*ºC?", "", novo_texto, flags=re.IGNORECASE)
     if dados_novos.get('quant'):
@@ -245,13 +246,14 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     if dados_novos.get('bh'):
         novo_texto = re.sub(r"BH:\s*[+-]?\s*[\d.,]+", "", novo_texto, flags=re.IGNORECASE)
         
-    # Laboratórios (Só limpa se tivermos novos para inserir)
+    # 2. Limpa Labs (Se houver novos, remove o bloco antigo inteiro para substituir pelo novo)
     if limpar_labs:
-        # Remove bloco [Labs: ... ]
+        # Remove [Labs: ... ]
         novo_texto = re.sub(r"\[Labs:.*?\]", "", novo_texto, flags=re.IGNORECASE)
-        # Remove também se estiver escrito "Dados: [Labs: ...]" para não sobrar "Dados: " solto
+        # Remove "Dados:" se ele ficar solto no final
         novo_texto = re.sub(r"Dados:\s*$", "", novo_texto.strip())
 
+    # Limpeza de pontuação dupla residual
     novo_texto = re.sub(r"\.\s*\.", ".", novo_texto)
     novo_texto = re.sub(r"\s+", " ", novo_texto)
     return novo_texto.strip()
@@ -275,7 +277,7 @@ with st.sidebar:
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
 
-# --- LABS ---
+# --- ABA DE LABORATÓRIOS ---
 with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     cols = [col1, col2, col3, col4]
@@ -303,7 +305,7 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     outros = st.text_input("Outros Exames")
     if outros: labs_preenchidos["Outros"] = outros
 
-# --- SISTEMAS ---
+# --- SISTEMAS CLÍNICOS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
@@ -315,14 +317,14 @@ for sis in sistemas:
     # 1. Recupera anterior
     prev_text_raw = texto_antigo_parseado.get(sis, "")
     
-    # 2. Decide se vai limpar Labs antigos (apenas se houver novos labs para este sistema)
+    # 2. Verifica se tem novos labs para este sistema (para acionar a limpeza)
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
     for k in mapa_abrev:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
-    # 3. Limpa texto anterior (Vitais e Labs se necessário)
+    # 3. Limpa o texto anterior (remove vitais velhos e labs velhos SE houver novos)
     prev_text = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
     with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text[:40]}...)" if prev_text else ""), expanded=False):
@@ -370,13 +372,13 @@ for sis in sistemas:
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
-        # Lógica de Manter vs Substituir
+        # Lógica: Se não marcou nada, mantém anterior (JÁ LIMPO). Se marcou, substitui.
         if not partes and prev_text:
             texto_final_sis = prev_text
         else:
             texto_final_sis = ". ".join(partes)
             
-        # Append Vitais
+        # Append Vitais (novos)
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -388,7 +390,7 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
-        # Append Labs
+        # Append Labs (novos)
         l_txt = []
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
@@ -398,7 +400,7 @@ for sis in sistemas:
             
         if l_txt:
             l_str = " [Labs: " + " | ".join(l_txt) + "]"
-            # Adiciona apenas se já não estiver lá (dupla checagem)
+            # Se já tiver um bloco de labs (pode ter vindo do texto anterior se não limpamos), não duplica
             if l_str not in texto_final_sis:
                 texto_final_sis = (texto_final_sis + "." + l_str) if texto_final_sis else ("Dados: " + l_str)
 
