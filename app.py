@@ -3,22 +3,24 @@ import re
 import datetime
 
 # ==============================================================================
-# CONFIGURAÇÕES E BANCO DE DADOS
+# CONFIGURAÇÕES DA PÁGINA
 # ==============================================================================
-
 st.set_page_config(page_title="Gerador de Evolução UTI", page_icon="🏥", layout="wide")
 
-# CSS para deixar o visual mais compacto (útil para celular)
 st.markdown("""
     <style>
-        .block-container {padding-top: 1rem; padding-bottom: 1rem;}
-        h1 {font-size: 1.5rem;}
-        h2 {font-size: 1.2rem;}
-        .stTextArea textarea {font-size: 14px;}
+        .block-container {padding-top: 1rem; padding-bottom: 3rem;}
+        h1 {font-size: 1.5rem; margin-bottom: 0.5rem;}
+        .stRadio label {font-weight: bold; color: #31333F;}
+        .stTextInput label {font-size: 14px;}
+        hr {margin-top: 0.5rem; margin-bottom: 0.5rem;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- TERMOS E GATILHOS (Mesma lógica do Colab) ---
+# ==============================================================================
+# 1. BANCO DE DADOS E GATILHOS
+# ==============================================================================
+
 TERMOS_PROTEGIDOS = [
     "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
     "ml/kg", "ml/kg/h", "L/min", "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
@@ -59,8 +61,10 @@ DB_FRASES = {
         "PO tardio de {procedimento} ({data}), evoluindo estável",
         "Admissão na UTI pós {procedimento}",
         "Paciente em tratamento de Choque Séptico (Foco: {foco})",
-        "Neurocrítico (HIC/AVE/TCE), medidas de neuroproteção",
-        "Reabordado cirurgicamente em {data} para {procedimento}"
+        "Neurocrítico (HIC/AVE/TCE), medidas de neuroproteção mantidas",
+        "Reabordado cirurgicamente em {data} para {procedimento}",
+        "Internação prolongada por complicações de {causa}",
+        "Paciente em cuidados paliativos / Limitação de esforço terapêutico"
     ],
     "NEURO": [
         "RASS 0, vigil, colaborativo, orientado",
@@ -89,12 +93,15 @@ DB_FRASES = {
         "Em uso de Noradrenalina {dose} mcg/kg/min",
         "Em desmame de DVA (Noradrenalina {dose})",
         "Desmamado vasodilatador, iniciado oral ({droga})",
+        "Associado anti-hipertensivo oral ({droga})",
         "Ritmo Sinusal / Fibrilação Atrial (FA)",
         "FA controlada com {droga} (FC {fc}bpm)",
         "Bem perfundido (TEC < 3s, Lac normal) / Má perfusão (TEC > 4s)",
         "Hipertenso, em uso de Nitroprussiato {vazao} ml/h",
-        "Hipotenso, realizada expansão {quant} ml",
-        "Extremidades quentes / Extremidades frias"
+        "Hipotenso, realizada expansão volêmica com {quant} ml",
+        "Extremidades quentes / Extremidades frias",
+        "Suspenso antiagregante / Suspenso anticoagulação",
+        "Solicitado Ecocardiograma (ECOTT)"
     ],
     "RESP": [
         "Eupneico em ar ambiente (AA), confortável",
@@ -102,11 +109,13 @@ DB_FRASES = {
         "Em Máscara de Venturi {perc}%",
         "VM via TOT, modo {modo} / VM via TQT",
         "Parâmetros: Vol {vol}ml, PEEP {peep}, FIO2 {fio}%",
-        "Desconforto respiratório leve / moderado",
+        "Desconforto respiratório leve / moderado / intenso",
         "Em VNI intermitente ({motivo})",
         "Extubação realizada no período sem intercorrências",
-        "Ausculta: Murmúrio vesicular presente / Creptos em {loc}",
-        "Dreno de tórax à {lado} oscilante / Improdutivo",
+        "Ausculta: Murmúrio vesicular presente / Creptos em {loc} / Roncos",
+        "Secretividade aumentada, aspecto {aspecto}",
+        "Dreno de tórax à {lado} oscilante / borbulhante / improdutivo",
+        "Hiperemia e secreção em estoma de traqueostomia",
         "TC de Tórax: {laudo}"
     ],
     "TGI": [
@@ -118,19 +127,23 @@ DB_FRASES = {
         "Nutrição Parenteral Total (NPT) em curso",
         "Retirado SNG no período",
         "Abdome flácido, indolor / Globoso e distendido",
+        "Ruídos hidroaéreos presentes / RHA diminuídos ou ausentes",
         "Evacuações presentes ({aspecto}) / Ausentes",
+        "Dejeções ausentes há {dias} dias (Iniciado laxativos)",
         "Glicemias controladas / Labéis (Iniciado Insulina)",
-        "Em uso de procinéticos e IBP"
+        "Em uso de procinéticos e inibidor de bomba de prótons (IBP)",
+        "Saída de secreção peri-sonda (GTT/SNE)"
     ],
     "RENAL": [
         "Diurese espontânea conservada e clara",
-        "Diurese via SVD, aspecto {aspecto}",
-        "Diurese em baixo fluxo / Oligúria",
-        "Realizado estímulo diurético (boa resposta / sem resposta)",
+        "Diurese via Sonda Vesical (SVD), aspecto {aspecto}",
+        "Irrigação vesical contínua (hematúria {tipo}) / Sem irrigação",
+        "Oligúria, realizado estímulo diurético com {droga}",
+        "Poliúria (> 3ml/kg/h), vigiando eletrólitos",
         "Função renal preservada / Função renal alterada (estável)",
         "Função renal em melhora / Função renal em piora",
         "Em Hemodiálise (HD) intermitente / Em CVVHD",
-        "Sem DHE graves / Reposição de K/Mg",
+        "Sem distúrbios hidroeletrolíticos graves / Reposição de K/Mg",
         "Nefrostomia produtiva ({quant}ml) / improdutiva",
         "Balanço Hídrico negativo / BH positivo / BH neutro"
     ],
@@ -142,7 +155,7 @@ DB_FRASES = {
         "Sem foco infeccioso aparente",
         "Curativos limpos e secos / Deiscência de ferida operatória",
         "Sem sinais flogísticos em acessos venosos",
-        "Leucograma: estável / em melhora / com leucocitose",
+        "Leucocitose mantida / Leucograma em melhora",
         "Hb estável / Hb em queda"
     ],
     "GERAL": [
@@ -157,7 +170,7 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# FUNÇÕES DE LÓGICA (CORE)
+# 2. FUNÇÕES DE SUPORTE
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
@@ -169,36 +182,6 @@ def buscar_valor_antigo(texto, chave):
             nums = [n for n in match.group(1).split() if n[0].isdigit()]
             return nums[-1] if nums else None
     return None
-
-def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
-    """Processa a frase escolhida no UI com os dados e complementos"""
-    frase = frase_base
-    
-    # Substituir placeholders de vitais
-    for k, v in dados_extra.items():
-        if f"{{{k}}}" in frase:
-            if v: frase = frase.replace(f"{{{k}}}", v)
-            else: frase = frase.replace(f"{{{k}}}", "")
-            
-    # Lógica de Barras /
-    tem_barra = "/" in frase and not any(tp in frase for tp in TERMOS_PROTEGIDOS)
-    
-    # Se o usuário digitou complemento
-    if complemento_usuario:
-        # Se tem placeholder na frase, o complemento preenche ele
-        if "{" in frase:
-            # Encontra o primeiro placeholder
-            inicio = frase.find("{")
-            fim = frase.find("}")
-            if inicio != -1 and fim != -1:
-                frase = frase[:inicio] + complemento_usuario + frase[fim+1:]
-        # Se não tem placeholder, anexa ao final (ou substitui opção se tiver barra)
-        else:
-            frase += f" {complemento_usuario}"
-            
-    # Limpa placeholders que sobraram (vazios)
-    frase = re.sub(r'\{.*?\}', '', frase)
-    return re.sub(r'\s+', ' ', frase).strip()
 
 def extrair_texto_anterior(texto_completo):
     if not texto_completo: return {}
@@ -229,29 +212,27 @@ def extrair_texto_anterior(texto_completo):
     return resultado
 
 # ==============================================================================
-# INTERFACE STREAMLIT
+# 3. INTERFACE STREAMLIT (Lógica Dinâmica)
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
 
-# --- COLUNA LATERAL (DADOS VITAIS) ---
+# --- SIDEBAR: DADOS VITAIS ---
 with st.sidebar:
-    st.header("Dados do Paciente")
+    st.header("Paciente")
     leito = st.text_input("Leito", placeholder="Ex: 01")
     tax = st.text_input("TAX (ºC)")
     diurese = st.text_input("Diurese (ml)")
     bh = st.text_input("Balanço Hídrico")
-    
-    st.info("💡 **Dica:** Copie a evolução de ontem abaixo para puxar os dados.")
-    txt_ant = st.text_area("Evolução Anterior", height=200)
+    st.info("Cole a evolução anterior para puxar dados:")
+    txt_ant = st.text_area("Evolução Anterior", height=150)
 
-# Dados para injeção
+# Dicionário de vitais para substituição rápida
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
-# Parse do texto antigo
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
 
 # --- ABA DE LABORATÓRIOS ---
-with st.expander("🧪 LABORATÓRIOS (Comparativo Automático)", expanded=True):
+with st.expander("🧪 LABORATÓRIOS (Preencher)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     cols = [col1, col2, col3, col4]
     
@@ -266,26 +247,19 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo Automático)", expanded=True):
     ]
     
     labs_preenchidos = {}
-    
     for i, (chave, nome) in enumerate(lista_labs):
-        # Busca valor antigo
         ant = buscar_valor_antigo(txt_ant, chave)
         label = f"{nome} (Ant: {ant})" if ant else nome
-        
-        # Cria input na coluna certa
         with cols[i % 4]:
-            novo_val = st.text_input(label, key=f"lab_{chave}")
-            
-        if novo_val:
-            if ant and novo_val != ant:
-                labs_preenchidos[chave] = f"{ant}->{novo_val}"
-            else:
-                labs_preenchidos[chave] = novo_val
-                
-    outros_labs = st.text_input("Outros Exames (Ex: Amilase 50)")
-    if outros_labs: labs_preenchidos["Outros"] = outros_labs
+            val = st.text_input(label, key=f"lab_{chave}")
+            if val:
+                if ant and val != ant: labs_preenchidos[chave] = f"{ant}->{val}"
+                else: labs_preenchidos[chave] = val
+    
+    outros = st.text_input("Outros Exames")
+    if outros: labs_preenchidos["Outros"] = outros
 
-# --- SISTEMAS CLÍNICOS ---
+# --- SISTEMAS CLÍNICOS (GERAÇÃO DINÂMICA) ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
@@ -294,50 +268,78 @@ rastreador_uso = set()
 st.markdown("---")
 
 for sis in sistemas:
-    # Recupera texto anterior se houver
     prev_text = texto_antigo_parseado.get(sis, "")
     
-    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text[:30]}...)" if prev_text else ""), expanded=False):
+    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text[:40]}...)" if prev_text else ""), expanded=False):
         
-        # Opções do Banco de Dados
-        opcoes = ["Selecione..."] + DB_FRASES[sis]
-        escolha = st.selectbox(f"Frase Principal ({sis})", options=opcoes, key=f"sel_{sis}")
+        # 1. Múltipla Escolha
+        escolhas = st.multiselect(
+            f"Selecione as frases para {sis}:", 
+            options=DB_FRASES[sis],
+            key=f"multi_{sis}"
+        )
         
-        # Se tiver barra na escolha, oferece Radio Button para refinar
-        frase_processada = escolha
-        if "/" in escolha and escolha != "Selecione..." and not any(tp in escolha for tp in TERMOS_PROTEGIDOS):
-            subs = [op.strip() for op in escolha.split("/")]
-            sub_escolha = st.radio("Refinar opção:", subs, key=f"rad_{sis}", horizontal=True)
-            frase_processada = sub_escolha
+        frases_selecionadas = []
+        
+        # 2. Loop Dinâmico: Para cada escolha, mostra refinamentos específicos
+        for i, item in enumerate(escolhas):
+            texto_base = item
             
-        # Campo para Complemento ou Texto Livre
-        complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}", placeholder="Digite detalhes ou texto livre aqui...")
+            # (A) Se tiver barra (/), mostra Radio Button
+            # Verifica se é uma barra de opção real, não de unidade
+            tem_barra = "/" in item and not any(tp in item for tp in TERMOS_PROTEGIDOS)
+            
+            if tem_barra:
+                opcoes_radio = [x.strip() for x in item.split("/")]
+                # O label é um pedaço da frase pra identificar
+                sub_escolha = st.radio(
+                    f"👉 Opção para: *'{item[:40]}...'*", 
+                    opcoes_radio, 
+                    key=f"rad_{sis}_{item}", # Key única baseada na frase
+                    horizontal=True
+                )
+                texto_base = sub_escolha
+            
+            # (B) Se tiver Variável ({dose}, {droga}), mostra Text Input
+            # Isso acontece DEPOIS de resolver o radio (caso a opção escolhida tenha variável)
+            if "{" in texto_base:
+                # Encontra o que está dentro das chaves para usar no label
+                match = re.search(r"\{(.*?)\}", texto_base)
+                label_ph = match.group(1) if match else "valor"
+                
+                # Se for um vital global (tax, bh), já tenta preencher, senão pede input
+                if label_ph in dados_vitais and dados_vitais[label_ph]:
+                    texto_base = texto_base.replace(f"{{{label_ph}}}", dados_vitais[label_ph])
+                    rastreador_uso.add(label_ph)
+                else:
+                    val_input = st.text_input(
+                        f"✏️ Preencha **{label_ph}** para: *'{texto_base}'*", 
+                        key=f"in_{sis}_{item}_{label_ph}"
+                    )
+                    if val_input:
+                        texto_base = texto_base.replace(f"{{{label_ph}}}", val_input)
+                    else:
+                        # Limpa se não preencher
+                        texto_base = re.sub(r'\{.*?\}', '', texto_base)
+            
+            # Adiciona a frase processada na lista
+            frases_selecionadas.append(texto_base)
+            
+        # 3. Campo Livre (Complemento)
+        complemento = st.text_input(f"Texto Livre / Complemento ({sis})", key=f"comp_{sis}")
         
-        # LÓGICA DE MONTAGEM DO PARÁGRAFO
-        texto_final_sis = ""
-        
-        # 1. Se usuário não escolheu frase nem escreveu nada, MANTEM ANTERIOR
-        if escolha == "Selecione..." and not complemento:
+        # 4. Montagem Final do Bloco
+        partes = frases_selecionadas[:]
+        if complemento:
+            partes.append(complemento)
+            
+        # Lógica: Se não marcou nada, mantém anterior. Se marcou, substitui.
+        if not partes and prev_text:
             texto_final_sis = prev_text
+        else:
+            texto_final_sis = ". ".join(partes)
             
-        # 2. Se escolheu frase
-        elif escolha != "Selecione...":
-            texto_final_sis = processar_frase_ui(frase_processada, complemento, dados_vitais)
-            # Rastreia vitais usados
-            for k, v in dados_vitais.items():
-                if v and v in texto_final_sis: rastreador_uso.add(k)
-        
-        # 3. Se só escreveu texto livre (escolha vazia)
-        elif escolha == "Selecione..." and complemento:
-            # Se tiver texto anterior, anexa. Se não, é só o novo.
-            if prev_text:
-                texto_final_sis = f"{complemento}. {prev_text}"
-            else:
-                texto_final_sis = complemento
-
-        # --- LÓGICA DE EXAMES E VITAIS AUTOMÁTICOS ---
-        
-        # Auto-Append Vitais (se não foram usados no texto)
+        # --- Auto-Append Vitais ---
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -349,7 +351,7 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
-        # Append Labs
+        # --- Auto-Append Labs ---
         l_txt = []
         mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
         for nome_interno, abreviacao in mapa_abrev.items():
@@ -360,23 +362,22 @@ for sis in sistemas:
             
         if l_txt:
             l_str = " [Labs: " + " | ".join(l_txt) + "]"
-            # Evita duplicar labs se já vieram do texto copiado
             if l_str not in texto_final_sis:
                 texto_final_sis = (texto_final_sis + "." + l_str) if texto_final_sis else ("Dados: " + l_str)
 
-        # Salva o bloco e busca condutas
-        blocos_finais[sis] = texto_final_sis
+        blocos_finais[sis] = texto_final_sis.replace("..", ".").strip()
+        
+        # Caça condutas
         for g in GATILHOS_CONDUTA:
             if g in texto_final_sis.lower():
-                condutas_detectadas.append(texto_final_sis) # Adiciona a frase toda ou parte dela
+                condutas_detectadas.append(texto_final_sis)
                 break
 
 # ==============================================================================
 # GERAÇÃO FINAL
 # ==============================================================================
-
 st.markdown("---")
-st.header("📝 Texto Final")
+st.header("📝 Resultado Final")
 
 hoje = datetime.date.today().strftime('%d/%m/%Y')
 texto_completo = f"=== EVOLUÇÃO - LEITO {leito} ({hoje}) ===\n\n"
@@ -384,19 +385,15 @@ texto_completo = f"=== EVOLUÇÃO - LEITO {leito} ({hoje}) ===\n\n"
 if blocos_finais["CONTEXTO"]: 
     texto_completo += f"{blocos_finais['CONTEXTO']}.\n\n"
 
-for sis in sistemas[1:]: # Pula Contexto
+for sis in sistemas[1:]: 
     conteudo = blocos_finais[sis]
     if conteudo and conteudo != "Dados: [Labs: ]":
-        # Limpeza fina
-        conteudo = conteudo.replace("..", ".").replace(". [", ". [").strip()
         texto_completo += f"{sis}: {conteudo}.\n"
 
 texto_completo += "\n/// CONDUTAS ///\n"
 if condutas_detectadas:
-    # Filtra frases repetidas e formata
     condutas_unicas = list(set(condutas_detectadas))
     for c in condutas_unicas:
-        # Tenta pegar só o trecho relevante se possível, ou a frase toda
         texto_completo += f"- {c.strip()}.\n"
 else:
     texto_completo += "- Mantidas.\n"
