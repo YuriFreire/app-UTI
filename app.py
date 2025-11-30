@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. BANCO DE DADOS E GATILHOS
+# 1. BANCO DE DADOS
 # ==============================================================================
 
 TERMOS_PROTEGIDOS = [
@@ -96,7 +96,8 @@ DB_FRASES = {
         "Associado anti-hipertensivo oral ({droga})",
         "Ritmo Sinusal / Fibrilação Atrial (FA)",
         "FA controlada com {droga} (FC {fc}bpm)",
-        "Bem perfundido (TEC < 3s, Lac normal) / Má perfusão (TEC > 4s)",
+        "Bem perfundido (TEC < 3s, Lac normal)",
+        "Má perfusão (frio, TEC > 4s, livedo)",
         "Hipertenso, em uso de Nitroprussiato {vazao} ml/h",
         "Hipotenso, realizada expansão volêmica com {quant} ml",
         "Extremidades quentes / Extremidades frias",
@@ -170,7 +171,7 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 2. FUNÇÕES DE SUPORTE
+# 2. FUNÇÕES DE SUPORTE E LIMPEZA
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
@@ -182,6 +183,26 @@ def buscar_valor_antigo(texto, chave):
             nums = [n for n in match.group(1).split() if n[0].isdigit()]
             return nums[-1] if nums else None
     return None
+
+def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
+    frase = frase_base
+    for k, v in dados_extra.items():
+        if f"{{{k}}}" in frase:
+            if v: frase = frase.replace(f"{{{k}}}", v)
+            else: frase = frase.replace(f"{{{k}}}", "")
+            
+    if complemento_usuario:
+        if "{" in frase:
+            # Encontra placeholder e substitui
+            inicio = frase.find("{")
+            fim = frase.find("}")
+            if inicio != -1 and fim != -1:
+                frase = frase[:inicio] + complemento_usuario + frase[fim+1:]
+        else:
+            # Anexa se não tiver placeholder
+            frase += f" {complemento_usuario}"
+            
+    return re.sub(r'\{.*?\}', '', frase).strip()
 
 def extrair_texto_anterior(texto_completo):
     if not texto_completo: return {}
@@ -211,28 +232,51 @@ def extrair_texto_anterior(texto_completo):
         resultado[chave] = conteudo
     return resultado
 
+def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
+    """Remove vitais e/ou laboratórios antigos para evitar duplicidade"""
+    if not texto: return ""
+    novo_texto = texto
+    
+    # Vitais
+    if dados_novos.get('tax'):
+        novo_texto = re.sub(r"TAX:\s*[\d.,]+\s*ºC?", "", novo_texto, flags=re.IGNORECASE)
+    if dados_novos.get('quant'):
+        novo_texto = re.sub(r"Diurese:\s*[\d.,]+\s*(ml)?", "", novo_texto, flags=re.IGNORECASE)
+    if dados_novos.get('bh'):
+        novo_texto = re.sub(r"BH:\s*[+-]?\s*[\d.,]+", "", novo_texto, flags=re.IGNORECASE)
+        
+    # Laboratórios (Só limpa se tivermos novos para inserir)
+    if limpar_labs:
+        # Remove bloco [Labs: ... ]
+        novo_texto = re.sub(r"\[Labs:.*?\]", "", novo_texto, flags=re.IGNORECASE)
+        # Remove também se estiver escrito "Dados: [Labs: ...]" para não sobrar "Dados: " solto
+        novo_texto = re.sub(r"Dados:\s*$", "", novo_texto.strip())
+
+    novo_texto = re.sub(r"\.\s*\.", ".", novo_texto)
+    novo_texto = re.sub(r"\s+", " ", novo_texto)
+    return novo_texto.strip()
+
 # ==============================================================================
-# 3. INTERFACE STREAMLIT (Lógica Dinâmica)
+# 3. INTERFACE STREAMLIT
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
 
-# --- SIDEBAR: DADOS VITAIS ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Paciente")
     leito = st.text_input("Leito", placeholder="Ex: 01")
     tax = st.text_input("TAX (ºC)")
     diurese = st.text_input("Diurese (ml)")
     bh = st.text_input("Balanço Hídrico")
-    st.info("Cole a evolução anterior para puxar dados:")
-    txt_ant = st.text_area("Evolução Anterior", height=150)
+    st.info("Copie a evolução anterior:")
+    txt_ant = st.text_area("Anterior", height=150)
 
-# Dicionário de vitais para substituição rápida
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
 
-# --- ABA DE LABORATÓRIOS ---
-with st.expander("🧪 LABORATÓRIOS (Preencher)", expanded=True):
+# --- LABS ---
+with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     cols = [col1, col2, col3, col4]
     
@@ -259,7 +303,7 @@ with st.expander("🧪 LABORATÓRIOS (Preencher)", expanded=True):
     outros = st.text_input("Outros Exames")
     if outros: labs_preenchidos["Outros"] = outros
 
-# --- SISTEMAS CLÍNICOS (GERAÇÃO DINÂMICA) ---
+# --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
@@ -268,46 +312,46 @@ rastreador_uso = set()
 st.markdown("---")
 
 for sis in sistemas:
-    prev_text = texto_antigo_parseado.get(sis, "")
+    # 1. Recupera anterior
+    prev_text_raw = texto_antigo_parseado.get(sis, "")
+    
+    # 2. Decide se vai limpar Labs antigos (apenas se houver novos labs para este sistema)
+    tem_novos_labs_sis = False
+    mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
+    for k in mapa_abrev:
+        if k in labs_preenchidos: tem_novos_labs_sis = True
+    if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
+    
+    # 3. Limpa texto anterior (Vitais e Labs se necessário)
+    prev_text = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
     with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text[:40]}...)" if prev_text else ""), expanded=False):
         
-        # 1. Múltipla Escolha
         escolhas = st.multiselect(
             f"Selecione as frases para {sis}:", 
             options=DB_FRASES[sis],
             key=f"multi_{sis}"
         )
         
-        frases_selecionadas = []
+        frases_do_sistema = []
         
-        # 2. Loop Dinâmico: Para cada escolha, mostra refinamentos específicos
         for i, item in enumerate(escolhas):
             texto_base = item
-            
-            # (A) Se tiver barra (/), mostra Radio Button
-            # Verifica se é uma barra de opção real, não de unidade
             tem_barra = "/" in item and not any(tp in item for tp in TERMOS_PROTEGIDOS)
             
             if tem_barra:
                 opcoes_radio = [x.strip() for x in item.split("/")]
-                # O label é um pedaço da frase pra identificar
                 sub_escolha = st.radio(
-                    f"👉 Opção para: *'{item[:40]}...'*", 
+                    f"Refinar: {item[:30]}...", 
                     opcoes_radio, 
-                    key=f"rad_{sis}_{item}", # Key única baseada na frase
+                    key=f"radio_{sis}_{i}",
                     horizontal=True
                 )
                 texto_base = sub_escolha
             
-            # (B) Se tiver Variável ({dose}, {droga}), mostra Text Input
-            # Isso acontece DEPOIS de resolver o radio (caso a opção escolhida tenha variável)
             if "{" in texto_base:
-                # Encontra o que está dentro das chaves para usar no label
                 match = re.search(r"\{(.*?)\}", texto_base)
                 label_ph = match.group(1) if match else "valor"
-                
-                # Se for um vital global (tax, bh), já tenta preencher, senão pede input
                 if label_ph in dados_vitais and dados_vitais[label_ph]:
                     texto_base = texto_base.replace(f"{{{label_ph}}}", dados_vitais[label_ph])
                     rastreador_uso.add(label_ph)
@@ -316,30 +360,23 @@ for sis in sistemas:
                         f"✏️ Preencha **{label_ph}** para: *'{texto_base}'*", 
                         key=f"in_{sis}_{item}_{label_ph}"
                     )
-                    if val_input:
-                        texto_base = texto_base.replace(f"{{{label_ph}}}", val_input)
-                    else:
-                        # Limpa se não preencher
-                        texto_base = re.sub(r'\{.*?\}', '', texto_base)
+                    if val_input: texto_base = texto_base.replace(f"{{{label_ph}}}", val_input)
+                    else: texto_base = re.sub(r'\{.*?\}', '', texto_base)
             
-            # Adiciona a frase processada na lista
-            frases_selecionadas.append(texto_base)
+            frases_do_sistema.append(texto_base)
             
-        # 3. Campo Livre (Complemento)
-        complemento = st.text_input(f"Texto Livre / Complemento ({sis})", key=f"comp_{sis}")
+        complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
-        # 4. Montagem Final do Bloco
-        partes = frases_selecionadas[:]
-        if complemento:
-            partes.append(complemento)
+        partes = frases_do_sistema[:]
+        if complemento: partes.append(complemento)
             
-        # Lógica: Se não marcou nada, mantém anterior. Se marcou, substitui.
+        # Lógica de Manter vs Substituir
         if not partes and prev_text:
             texto_final_sis = prev_text
         else:
             texto_final_sis = ". ".join(partes)
             
-        # --- Auto-Append Vitais ---
+        # Append Vitais
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -351,9 +388,8 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
-        # --- Auto-Append Labs ---
+        # Append Labs
         l_txt = []
-        mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
                 l_txt.append(f"{abreviacao}: {labs_preenchidos[nome_interno]}")
@@ -362,12 +398,12 @@ for sis in sistemas:
             
         if l_txt:
             l_str = " [Labs: " + " | ".join(l_txt) + "]"
+            # Adiciona apenas se já não estiver lá (dupla checagem)
             if l_str not in texto_final_sis:
                 texto_final_sis = (texto_final_sis + "." + l_str) if texto_final_sis else ("Dados: " + l_str)
 
         blocos_finais[sis] = texto_final_sis.replace("..", ".").strip()
         
-        # Caça condutas
         for g in GATILHOS_CONDUTA:
             if g in texto_final_sis.lower():
                 condutas_detectadas.append(texto_final_sis)
