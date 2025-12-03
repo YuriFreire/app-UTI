@@ -18,38 +18,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. LISTAS DE PROTEÇÃO, GATILHOS E CONFLITOS
+# 1. LISTAS E BANCO DE DADOS
 # ==============================================================================
 
-# Dicionário de termos que NÃO podem coexistir no mesmo sistema.
-# Se dois termos do mesmo grupo aparecerem, o sistema mantém apenas o ÚLTIMO.
 GRUPOS_CONFLITO = {
     "ATB": ["antibiótico", "atb", "sem atb", "tazocin", "meropenem", "vanco", "ceft", "pipetazo", "teicoplanina", "linezolida", "polimixina", "amicacina", "gentamicina", "ampicilina", "cipro", "levo", "metronidazol", "bactrim", "fluconazol", "micafungina", "anidulafungina"],
-    "SEDA": ["sedado", "sedação", "rass", "propofol", "fentanil", "midazolam", "precedex", "ketamina", "cetamina", "pancuronio", "cisatracurio", "sem sedação", "desligada sedação"],
+    "SEDA": ["sedado", "sedação", "rass", "propofol", "fentanil", "midazolam", "precedex", "ketamina", "cetamina", "pancuronio", "cisatracurio", "sem sedação"],
     "DIETA": ["dieta", "npt", "jejum", "oral", "enteral", "sne", "gtt", "parenteral", "suspensa", "liberada"],
     "DVA": ["dva", "noradrenalina", "nora", "vasopressina", "vaso", "dobuta", "dobutamina", "nipride", "tridil", "adrenalina", "sem drogas vasoativas"],
     "TEMP": ["febril", "afebril", "tax", "curva térmica", "pico febril"],
     "VENT": ["tot", "tqt", "vni", "cateter", "cn", "máscara", "venturi", "macronebu", "eupneico", "ar ambiente", "aa", "vm via", "bipap", "cpap"],
     "RITMO": ["ritmo sinusal", "fibrilação atrial", "fa ", "bradicardia", "taquicardia", "ritmo de marcapasso"],
-    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"],
-    "DEJ": ["dejeções presentes", "sem dejeções", "dejeções ausentes", "constipado", "diarreia"],
-    "SNG": ["retirado sng", "sng aberta", "sng fechada"]
+    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"]
 }
 
 TERMOS_PROTEGIDOS = [
     "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
     "ml/kg", "ml/kg/h", "L/min", "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
     "24/24h", "12/12h", "AA", "PO", "SVD", "CN", "TOT", "TQT", "UI/h"
-]
-
-GATILHOS_CONDUTA = [
-    "realizo", "realizado", "fiz", "feito", "solicito", "solicitado", "peço", 
-    "inicio", "iniciado", "começo", "mantenho", "mantido", "suspendo", "suspenso", 
-    "retiro", "retirado", "ajusto", "ajustado", "corrijo", "corrigido", "troco", 
-    "trocado", "desligo", "desligado", "aumento", "aumentado", "reduzo", "reduzido", 
-    "prescrevo", "prescrito", "instalo", "instalado", "passo", "passado", 
-    "otimizo", "otimizado", "escalono", "escalonado", "descalono", "adiciono", "associo",
-    "transiciono", "deambulou", "sedestrou", "desmamado", "exteriorizou", "reabordado"
 ]
 
 MAPA_EXAMES_SISTEMA = {
@@ -69,10 +55,6 @@ SINONIMOS_BUSCA = {
     "pH": ["ph"], "pCO2": ["pco2"], "pO2": ["po2"], "Bicarbonato": ["bic", "hco3"],
     "TGO": ["tgo", "ast"], "TGP": ["tgp", "alt"], "Bilirrubinas": ["bt", "bilirrubina total"]
 }
-
-# ==============================================================================
-# 2. BANCO DE DADOS
-# ==============================================================================
 
 DB_FRASES = {
     "CONTEXTO": [
@@ -205,7 +187,7 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 2. FUNÇÕES DE SUPORTE E LÓGICA DE LIMPEZA
+# 2. FUNÇÕES DE SUPORTE
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
@@ -271,45 +253,26 @@ def extrair_texto_anterior(texto_completo):
         resultado[chave] = conteudo
     return resultado
 
-def resolver_conflitos_finais(texto_montado):
-    """
-    Função Mestre: Varre o texto final montado (Antigo + Novos) e
-    remove frases ANTERIORES que conflitem com as MAIS RECENTES.
-    A prioridade é sempre o que está no FINAL do texto (mais recente).
-    """
-    if not texto_montado: return ""
-    
-    # Divide em sentenças
-    sentencas = re.split(r'(?<=\.)\s+', texto_montado)
-    indices_para_remover = set()
-    
-    # Varre de trás pra frente (do mais recente pro mais antigo)
-    # Se encontrar um termo de conflito, marca esse grupo como "Já definido"
-    # E remove qualquer sentença anterior que use termos desse mesmo grupo.
-    
-    grupos_definidos = set()
-    
-    # Inverte a lista para processar do fim (novo) para o início (velho)
-    for i in range(len(sentencas) - 1, -1, -1):
-        sentenca_lower = sentencas[i].lower()
-        
-        # Identifica quais grupos esta sentença toca
-        grupos_nesta_sentenca = set()
-        for nome_grupo, termos in GRUPOS_CONFLITO.items():
-            if any(t in sentenca_lower for t in termos):
-                grupos_nesta_sentenca.add(nome_grupo)
-        
-        # Se a sentença toca em grupos que já foram definidos por frases posteriores (mais novas),
-        # então essa sentença é VELHA e contraditória. Deve ser removida.
-        if any(g in grupos_definidos for g in grupos_nesta_sentenca):
-            indices_para_remover.add(i)
-        
-        # Adiciona os grupos dessa sentença aos definidos (pois ela é a "autoridade" atual)
-        grupos_definidos.update(grupos_nesta_sentenca)
-        
-    # Reconstrói o texto apenas com as sentenças que sobreviveram
-    sentencas_finais = [s for k, s in enumerate(sentencas) if k not in indices_para_remover]
-    
+def limpar_conflitos_semanticos(texto_antigo, frases_novas):
+    if not texto_antigo or not frases_novas: return texto_antigo
+    grupos_acionados = set()
+    for frase in frases_novas:
+        frase_lower = frase.lower()
+        for grupo, palavras in GRUPOS_CONFLITO.items():
+            if any(p in frase_lower for p in palavras):
+                grupos_acionados.add(grupo)
+    if not grupos_acionados: return texto_antigo
+    sentencas_antigas = re.split(r'(?<=\.)\s+', texto_antigo)
+    sentencas_finais = []
+    for sentenca in sentencas_antigas:
+        sentenca_lower = sentenca.lower()
+        deletar = False
+        for grupo in grupos_acionados:
+            palavras_grupo = GRUPOS_CONFLITO[grupo]
+            if any(p in sentenca_lower for p in palavras_grupo):
+                deletar = True
+                break
+        if not deletar: sentencas_finais.append(sentenca)
     return " ".join(sentencas_finais).strip()
 
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
@@ -329,12 +292,39 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     return novo_texto.strip()
 
 # ==============================================================================
+# NOVA FUNÇÃO DE CONDUTAS INTELIGENTES
+# ==============================================================================
+def extrair_condutas_inteligente(texto_completo):
+    # Regex para pegar verbos de ação no início de orações
+    # Pega: "Iniciado..." ou ", iniciado..." ou ". Iniciado..."
+    verbos_regex = r"|".join([re.escape(v) for v in GATILHOS_CONDUTA])
+    
+    # Divide o texto em "fatias" (orações) pelos sinais de pontuação
+    fatias = re.split(r'[.,;]\s+', texto_completo)
+    condutas_finais = []
+    
+    for fatia in fatias:
+        fatia = fatia.strip()
+        if not fatia: continue
+        
+        # Verifica se a fatia COMEÇA com um verbo de ação (ignorando case)
+        # O ^ garante que pega o verbo no começo da oração, evitando "não realizado"
+        match = re.search(rf"^({verbos_regex})\b", fatia, re.IGNORECASE)
+        
+        if match:
+            # Verifica se tem "não" antes (caso a quebra tenha falhado)
+            if re.search(r"\bn[ãa]o\s+" + re.escape(match.group(1)), fatia, re.IGNORECASE):
+                continue
+            condutas_finais.append(fatia)
+            
+    return sorted(list(set(condutas_finais))) # Remove duplicatas e ordena
+
+# ==============================================================================
 # 3. INTERFACE STREAMLIT
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("Paciente")
     leito = st.text_input("Leito", placeholder="Ex: 01")
@@ -378,13 +368,11 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
 # --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
-condutas_detectadas = []
 rastreador_uso = set()
 
 st.markdown("---")
 
 for sis in sistemas:
-    # 1. Recupera anterior
     prev_text_raw = texto_antigo_parseado.get(sis, "")
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
@@ -392,10 +380,9 @@ for sis in sistemas:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
-    # 2. Limpa dados antigos (Vitais e Labs) para preparar o terreno
-    prev_text_limpo = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
+    prev_text_limpo_dados = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
-    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo[:40]}...)" if prev_text_limpo else ""), expanded=False):
+    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""), expanded=False):
         
         escolhas = st.multiselect(
             f"Selecione as frases para {sis}:", 
@@ -437,36 +424,21 @@ for sis in sistemas:
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
-        # 3. Montagem Bruta (Anterior + Novos)
-        # Se escolheu frases no menu, SUBSTITUI o anterior (regra padrão)
-        # Se só escreveu complemento, SOMA ao anterior
-        # Se não fez nada, MANTÉM anterior
-        
-        texto_montado = ""
-        
-        partes_novas = frases_do_sistema[:]
-        if complemento: partes_novas.append(complemento)
-        
         if frases_do_sistema:
-            # Opção A: Substituição (Menu foi usado -> Quadro mudou)
-            texto_montado = ". ".join(partes_novas)
-        elif complemento:
-            # Opção B: Adição (Só texto livre -> Adendo)
-            if prev_text_limpo:
-                texto_montado = f"{prev_text_limpo} {complemento}"
-            else:
-                texto_montado = complemento
-        elif prev_text_limpo:
-            # Opção C: Manutenção
-            texto_montado = prev_text_limpo
+            prev_text_limpo_conflitos = limpar_conflitos_semanticos(prev_text_limpo_dados, frases_do_sistema)
+        else:
+            prev_text_limpo_conflitos = prev_text_limpo_dados
+
+        partes = frases_do_sistema[:]
+        if complemento: partes.append(complemento)
             
-        # 4. RESOLUÇÃO DE CONFLITOS (A MÁGICA FINAL)
-        # Agora passamos o pente fino para garantir que não tenha "Com ATB" e "Sem ATB" juntos
-        # mesmo que tenham vindo de origens diferentes (anterior vs novo)
-        
-        texto_final_sis = resolver_conflitos_finais(texto_montado)
+        if not partes and prev_text_limpo_conflitos:
+            texto_final_sis = prev_text_limpo_conflitos
+        elif partes and prev_text_limpo_conflitos:
+            texto_final_sis = f"{prev_text_limpo_conflitos} {'. '.join(partes)}"
+        else:
+            texto_final_sis = ". ".join(partes)
             
-        # Append Vitais
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -478,7 +450,6 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
-        # Append Labs
         l_txt = []
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
@@ -492,14 +463,9 @@ for sis in sistemas:
                 texto_final_sis = (texto_final_sis + "." + l_str) if texto_final_sis else ("Dados: " + l_str)
 
         blocos_finais[sis] = texto_final_sis.replace("..", ".").strip()
-        
-        for g in GATILHOS_CONDUTA:
-            if g in texto_final_sis.lower():
-                condutas_detectadas.append(texto_final_sis)
-                break
 
 # ==============================================================================
-# GERAÇÃO FINAL
+# GERAÇÃO FINAL (COM CONDUTAS INTELIGENTES)
 # ==============================================================================
 st.markdown("---")
 st.header("📝 Resultado Final")
@@ -515,10 +481,13 @@ for sis in sistemas[1:]:
     if conteudo and conteudo != "Dados: [Labs: ]":
         texto_completo += f"{sis}: {conteudo}.\n"
 
+# Extração de condutas baseada no texto JÁ MONTADO
+all_text = " ".join(blocos_finais.values())
+condutas_finais = extrair_condutas_inteligente(all_text)
+
 texto_completo += "\n/// CONDUTAS ///\n"
-if condutas_detectadas:
-    condutas_unicas = list(set(condutas_detectadas))
-    for c in condutas_unicas:
+if condutas_finais:
+    for c in condutas_finais:
         texto_completo += f"- {c.strip()}.\n"
 else:
     texto_completo += "- Mantidas.\n"
