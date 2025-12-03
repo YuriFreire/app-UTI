@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. BANCO DE DADOS E LISTAS
+# 1. BANCO DE DADOS
 # ==============================================================================
 
 GRUPOS_CONFLITO = {
@@ -33,9 +33,8 @@ GRUPOS_CONFLITO = {
 }
 
 TERMOS_PROTEGIDOS = [
-    "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", 
-    "mcg/kg/min", "ml/h", "ml/kg", "ml/kg/h", "L/min", 
-    "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
+    "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
+    "ml/kg", "ml/kg/h", "L/min", "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
     "24/24h", "12/12h", "AA", "PO", "SVD", "CN", "TOT", "TQT"
 ]
 
@@ -58,7 +57,7 @@ MAPA_EXAMES_SISTEMA = {
 }
 
 SINONIMOS_BUSCA = {
-    "Hb": ["hb", "hgb"], "Ht": ["ht", "hto"], "Leucograma": ["leuco", "leucocitos"],
+    "Hb": ["hb", "hgb"], "Ht": ["ht", "hto"], "Leucograma": ["leuco", "leucocitos", "leucograma"],
     "Plaquetas": ["plq", "plaquetas"], "PCR": ["pcr"], "INR": ["inr"],
     "Ureia": ["ureia", "ur"], "Creatinina": ["cr", "creat"],
     "Sódio": ["sodio", "na"], "Potássio": ["potassio", "k"], "Magnésio": ["magnesio", "mg"],
@@ -188,36 +187,38 @@ DB_FRASES = {
 
 def buscar_valor_antigo(texto, chave):
     """
-    Nova lógica robusta:
-    1. Captura a cadeia inteira de valores (ex: 140 > 135 > 138)
-    2. Identifica se termina com 'R' ou 'reposto'
-    3. Retorna o valor correto (seja o último número ou o número+R)
+    Busca valores de exames, tolerando formatações com ou sem espaço (Ex: Na:140 ou Na 140).
+    Lê a cadeia inteira (140->145) e lida com R/Reposto.
     """
     if not texto: return None
     termos = SINONIMOS_BUSCA.get(chave, [chave.lower()])
     
     for t in termos:
-        # Padrão: Nome do exame + (números, setas, traços, espaços OU as palavras R/reposto)
-        # O padrão para apenas quando encontra uma letra que não faz parte de "Reposto"
-        pattern = rf"\b{re.escape(t)}[:=]?\s+([0-9.,\s>\-Rreposto]+)"
+        # REGEX PODEROSO V26.0:
+        # \b{t} -> O termo
+        # [:=\s]* -> Separadores opcionais (pega 'Na:' 'Na ' 'Na: ')
+        # ([0-9][0-9.,\s>\-]*) -> O valor (começa com numero, pode ter setas)
+        # ((?:R|reposto)?) -> Opcional final de reposição
+        
+        pattern = rf"\b{re.escape(t)}[:=\s]*([0-9][0-9.,\s>\-]*(?:R|reposto)?)"
         
         match = re.search(pattern, texto, re.IGNORECASE)
         if match:
             cadeia = match.group(1).strip()
             
-            # Verifica se o final da cadeia tem indicação de reposição
-            # Ex: "3.5 - R" ou "3.5 reposto"
+            # Verifica Reposição
             match_reposto = re.search(r'([0-9.,]+)\s*[-–]?\s*(R|reposto)$', cadeia, re.IGNORECASE)
             
             if match_reposto:
-                # Se for reposto, retornamos "Valor - R"
                 val = match_reposto.group(1)
                 indicador = match_reposto.group(2)
-                # Padroniza para "Valor - R"
                 return f"{val} - {indicador}"
             else:
-                # Se não for reposto, pega o último número da cadeia (ex: 140 > 135 -> pega 135)
-                numeros = re.findall(r'[0-9.,]+', cadeia)
+                # Limpa setas e pega o último número real
+                # Substitui setas por espaços para facilitar o split
+                cadeia_limpa = re.sub(r'[>\-]', ' ', cadeia)
+                numeros = [n for n in cadeia_limpa.split() if n[0].isdigit()]
+                
                 if numeros:
                     return numeros[-1]
                     
@@ -372,13 +373,17 @@ rastreador_uso = set()
 st.markdown("---")
 
 for sis in sistemas:
+    # 1. Recupera anterior
     prev_text_raw = texto_antigo_parseado.get(sis, "")
+    
+    # 2. Decide limpeza de Labs
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
     for k in mapa_abrev:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
+    # 3. Limpa texto (Vitais + Labs)
     prev_text_limpo_dados = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
     with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""), expanded=False):
@@ -423,11 +428,13 @@ for sis in sistemas:
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
+        # 4. Limpa Conflitos Semânticos
         if frases_do_sistema:
             prev_text_limpo_conflitos = limpar_conflitos_semanticos(prev_text_limpo_dados, frases_do_sistema)
         else:
             prev_text_limpo_conflitos = prev_text_limpo_dados
 
+        # 5. Montagem
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
@@ -438,6 +445,7 @@ for sis in sistemas:
         else:
             texto_final_sis = ". ".join(partes)
             
+        # Append Vitais
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -449,6 +457,7 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
+        # Append Labs (Novo Bloco)
         l_txt = []
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
