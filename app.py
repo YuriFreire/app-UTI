@@ -364,7 +364,7 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     if outros: labs_preenchidos["Outros"] = outros
 
 # --- SISTEMAS ---
-sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
+sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO/HEMOD", "TGI", "RENAL", "HEMATO/INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
 rastreador_uso = set()
