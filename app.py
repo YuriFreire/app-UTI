@@ -45,7 +45,7 @@ GATILHOS_CONDUTA = [
     "trocado", "desligo", "desligado", "aumento", "aumentado", "reduzo", "reduzido", 
     "prescrevo", "prescrito", "instalo", "instalado", "passo", "passado", 
     "otimizo", "otimizado", "escalono", "escalonado", "descalono", "adiciono", "associo",
-    "transiciono", "deambulou", "sedestrou", "desmamado", "exteriorizou", "reabordado", "feita"
+    "transiciono", "deambulou", "sedestrou", "desmamado", "exteriorizou", "reabordado"
 ]
 
 MAPA_EXAMES_SISTEMA = {
@@ -67,16 +67,15 @@ SINONIMOS_BUSCA = {
 }
 
 # ==============================================================================
-# 2. BANCO DE DADOS CORRIGIDO (SUAS FRASES)
+# 2. BANCO DE DADOS CORRIGIDO
 # ==============================================================================
-# ATENÇÃO: Frases com erros de sintaxe (aspas internas) foram corrigidas para parênteses.
 
 DB_FRASES = {
     "CONTEXTO": [
         "PO de {procedimento}, sem intercorrências",
-        "Paciente {idade} anos, portador de {comorbidades}",
+        "Paciente {idade}, portador de {comorbidades}",
         "PO tardio de {procedimento} ({data}), evoluindo estável",
-        "Admissão na UTI pós {procedimento} / com quadro de {quadro} / trazido para UTI por {motivo}",
+        "Admissão na UTI pós {procedimento} / Admissão com quadro de {quadro} / Trazido para UTI por {motivo}",
         "Paciente em tratamento de Choque Séptico (Foco: {foco})",
         "Reabordado cirurgicamente em {data} para {procedimento}",
         "Internação prolongada por complicações de {causa}",
@@ -106,7 +105,7 @@ DB_FRASES = {
     "CARDIO": [
         "Hemodinâmica estável, sem drogas vasoativas (DVA)",
         "Instabilidade hemodinâmica / Choque",
-        "Em uso de Noradrenalina {dose} mcg/kg/min / Em uso de Noradrenalina {dose} e Vasopressina {vazao} UI/h",
+        "Em uso de Noradrenalina {dose} mcg/kg/min / Nora {dose} e Vasopressina {vazao} UI/h",
         "Iniciado Dobutamina {dose} mcg/kg/min",
         "Em desmame de DVA (Noradrenalina {dose})",
         "Desligo DVA / DVA desligada",
@@ -126,12 +125,12 @@ DB_FRASES = {
     ],
     "RESP": [
         "Eupneico em ar ambiente (AA), confortável, com boa SO2",
-        "Padrão pulmonar {tipo}",
+        "Padrão A pulmonar / Padrão B / Padrão C",
         "PCO2 elevada",
         "Em uso de Cateter Nasal (CN) {litros} L/min",
         "Boas trocas / Trocas ruins (P/F {pf})",
         "Melhora da hipoxemia / Tolerando SO2 mais baixas",
-        "Com atividade expiratória / sem atividade expiratória",
+        "Com atividade expiratória / Sem atividade expiratória",
         "Apresentando taquidispneia",
         "Em Máscara de Venturi {perc}%",
         "VM via TOT, modo {modo} / VM via TQT",
@@ -159,7 +158,7 @@ DB_FRASES = {
         "Ruídos hidroaéreos presentes / RHA diminuídos ou ausentes",
         "Dejeções presentes ({aspecto}) / Dejeções Ausentes",
         "Dejeções ausentes há {dias} dias (Iniciado laxativos)",
-        "Glicemias controladas / Glicemias com escapes (ajustado insulina / iniciado insulina)",
+        "Glicemias controladas / Glicemias com escapes (ajustado/iniciado insulina)",
         "Em uso de procinéticos / IBP profilático / IBP pleno"
     ],
     "RENAL": [
@@ -182,13 +181,13 @@ DB_FRASES = {
         "Em uso de antibiótico: {atb} / Sem antibióticos",
         "Escalonado antibiótico para {novo} / Suspenso antibiótico",
         "Sem foco infeccioso aparente",
-        "Curativos limpos e secos / Deiscência de ferida operatória / piora infecciosa",
-        "Sem sinais de infecção em óstio de cateter / com sinais de infecção de óstio de cateter",
-        "Leucocitose mantida / Leucograma em melhora / leucograma elevado / leucograma em piora",
+        "Curativos limpos e secos / Deiscência de ferida / Piora infecciosa",
+        "Sem sinais de infecção em óstio / Com sinais de infecção de óstio",
+        "Leucocitose mantida / Leucograma em melhora / Leucograma elevado",
         "Hb estável / Hb em queda",
-        "Atb ajustado para função renal / atb dose full",
-        "Sem exteriorizar sangramentos / sangramento ativo em {sítio}",
-        "Feito CH / iniciado anticoagulação plena"
+        "Atb ajustado para função renal / Atb dose full",
+        "Sem exteriorizar sangramentos / Sangramento ativo em {sítio}",
+        "Feito CH / Iniciado anticoagulação plena"
     ],
     "GERAL": [
         "Retirado cateter / Trocado CVC / PAI / Sorensen",
@@ -307,11 +306,12 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     return novo_texto.strip()
 
 # ==============================================================================
-# 4. INTERFACE
+# 4. INTERFACE STREAMLIT
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
 
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Paciente")
     leito = st.text_input("Leito", placeholder="Ex: 01")
@@ -324,6 +324,7 @@ with st.sidebar:
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
 
+# --- LABS ---
 with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     cols = [col1, col2, col3, col4]
@@ -351,6 +352,7 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     outros = st.text_input("Outros Exames")
     if outros: labs_preenchidos["Outros"] = outros
 
+# --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
@@ -455,6 +457,9 @@ for sis in sistemas:
                 condutas_detectadas.append(texto_final_sis)
                 break
 
+# ==============================================================================
+# GERAÇÃO FINAL
+# ==============================================================================
 st.markdown("---")
 st.header("📝 Resultado Final")
 
