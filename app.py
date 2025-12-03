@@ -1,11 +1,12 @@
 import streamlit as st
 import re
 import datetime
+import hashlib
 
 # ==============================================================================
-# 1. CONFIGURAÇÕES VISUAIS
+# 1. CONFIGURAÇÕES VISUAIS & SETUP
 # ==============================================================================
-st.set_page_config(page_title="Gerador de Evolução UTI", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="Gerador de Evolução UTI Pro", page_icon="🏥", layout="wide")
 
 st.markdown("""
     <style>
@@ -14,11 +15,13 @@ st.markdown("""
         .stRadio label {font-weight: bold; color: #31333F;}
         .stTextInput label {font-size: 14px;}
         hr {margin-top: 0.5rem; margin-bottom: 0.5rem;}
+        /* Ajuste visual para separar melhor os blocos */
+        .streamlit-expanderHeader {font-weight: bold; font-size: 1.1em;}
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. LISTAS E BANCO DE DADOS (NO TOPO PARA SEGURANÇA)
+# 2. LISTAS E BANCO DE DADOS
 # ==============================================================================
 
 TERMOS_PROTEGIDOS = [
@@ -42,7 +45,8 @@ MAPA_EXAMES_SISTEMA = {
     "INFECTO": {"Leucograma": "Leucograma", "Hb": "Hb", "Ht": "Ht", "Plaquetas": "Plq", "PCR": "PCR", "Procalcitonina": "PCT", "INR": "INR"},
     "CARDIO": {"Lactato": "Lac", "Troponina": "Tropo", "CK-MB": "CKMB", "BNP": "BNP", "D-dímero": "D-dim", "SvO2": "SvO2", "GapCO2": "GapCO2"},
     "TGI":    {"TGO": "TGO", "TGP": "TGP", "GGT": "GGT", "FA": "FA", "Bilirrubinas": "BT", "Amilase": "Amil", "Lipase": "Lip"},
-    "RESP":   {"pH": "pH", "pCO2": "pCO2", "pO2": "pO2", "SatO2": "Sat", "Rel. P/F": "P/F", "BE": "BE"}
+    "RESP":   {"pH": "pH", "pCO2": "pCO2", "pO2": "pO2", "SatO2": "Sat", "Rel. P/F": "P/F", "BE": "BE"},
+    "GERAL":  {} # Inicializado vazio para evitar KeyErrors, mas processado logicamente
 }
 
 SINONIMOS_BUSCA = {
@@ -189,16 +193,23 @@ DB_FRASES = {
 # 3. FUNÇÕES DE SUPORTE E LÓGICA
 # ==============================================================================
 
+def criar_hash_estavel(texto):
+    """Cria um hash único e estável para usar como chave de widget."""
+    return hashlib.md5(texto.encode('utf-8')).hexdigest()
+
 def extrair_condutas_inteligente(texto_completo, gatilhos):
     if not texto_completo: return []
     verbos_regex = r"|".join([re.escape(v) for v in gatilhos])
-    fatias = re.split(r'[.,;]\s+', texto_completo)
+    # Separa por pontos e ponto-e-vírgula, ignora quebras de linha dentro da frase
+    fatias = re.split(r'[.;]\s+', texto_completo.replace("\n", " "))
     condutas_finais = []
     for fatia in fatias:
         fatia = fatia.strip()
         if not fatia: continue
+        # Verifica se começa com um verbo de ação
         match = re.search(rf"^({verbos_regex})\b", fatia, re.IGNORECASE)
         if match:
+            # Filtra falsos positivos como "Não realizo"
             if re.search(r"\bn[ãa]o\s+" + re.escape(match.group(1)), fatia, re.IGNORECASE):
                 continue
             condutas_finais.append(fatia)
@@ -212,73 +223,81 @@ def buscar_valor_antigo(texto, chave):
         match = re.search(pattern, texto, re.IGNORECASE)
         if match:
             cadeia = match.group(1).strip()
+            # Verifica se tem 'R' ou 'reposto'
             match_reposto = re.search(r'([0-9.,]+)\s*[-–]?\s*(R|reposto)$', cadeia, re.IGNORECASE)
             if match_reposto:
                 val = match_reposto.group(1)
                 indicador = match_reposto.group(2)
                 return f"{val} - {indicador}"
             else:
+                # Limpa sujeira
                 cadeia_limpa = re.sub(r'[>\-]', ' ', cadeia)
                 numeros = [n for n in cadeia_limpa.split() if n[0].isdigit()]
                 if numeros: return numeros[-1]
     return None
 
-def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
-    frase = frase_base
-    for k, v in dados_extra.items():
-        if f"{{{k}}}" in frase:
-            if v: frase = frase.replace(f"{{{k}}}", v)
-            else: frase = frase.replace(f"{{{k}}}", "")
-    if complemento_usuario:
-        if "{" in frase:
-            inicio = frase.find("{")
-            fim = frase.find("}")
-            if inicio != -1 and fim != -1:
-                frase = frase[:inicio] + complemento_usuario + frase[fim+1:]
-        else:
-            frase += f" {complemento_usuario}"
-    return re.sub(r'\{.*?\}', '', frase).strip()
-
 def extrair_texto_anterior(texto_completo):
     if not texto_completo: return {}
     texto = texto_completo.replace("\n", " ").strip()
+    
+    # Regex melhorado para capturar variações
     secoes = {
         "CONTEXTO": r"(Admissão|PO imediato|PO tardio|Paciente)", 
-        "NEURO": r"(NEURO|Neuro)", "RESP": r"(RESP|Resp|AR:)",
-        "CARDIO": r"(CARDIO|Cardio|CV:|ACV:)", "TGI": r"(TGI|Tgi)",
-        "RENAL": r"(RENAL|Renal|TGU)", "INFECTO": r"(INFECTO|Infecto|Hemato)",
-        "GERAL": r"(GERAL|Geral|Ext\.|Miscelânea)"
+        "NEURO": r"(NEURO|Neuro|Neurologia)", 
+        "RESP": r"(RESP|Resp|Respiratória|AR:)",
+        "CARDIO": r"(CARDIO|Cardio|Cardiovascular|CV:|ACV:)", 
+        "TGI": r"(TGI|Tgi|Gastro|Abdome)",
+        "RENAL": r"(RENAL|Renal|TGU|Urológico)", 
+        "INFECTO": r"(INFECTO|Infecto|Infecciosa|Hemato)",
+        "GERAL": r"(GERAL|Geral|Ext\.|Miscelânea|Outros)"
     }
+    
     indices = []
     for chave, regex in secoes.items():
         match = re.search(regex, texto)
         if match: indices.append((match.start(), chave))
+    
     indices.sort()
     resultado = {}
+    
     for i in range(len(indices)):
         start, chave = indices[i]
+        
+        # Define o fim da seção atual
         if i < len(indices) - 1:
             end = indices[i+1][0]
             conteudo = texto[start:end]
         else:
-            end_conduta = re.search(r"(CONDUTAS|Condutas|///)", texto[start:])
-            conteudo = texto[start : start + end_conduta.start()] if end_conduta else texto[start:]
-        conteudo = re.sub(r"^(NEURO|Neuro|RESP|Resp|CV:|ACV:|TGI|RENAL|Renal|TGU|INFECTO|Infecto|Hemato|GERAL|Geral)[:.]\s*", "", conteudo).strip()
+            # Se for a última seção encontrada, vai até o marcador de CONDUTAS ou Fim
+            end_conduta = re.search(r"(CONDUTAS|Condutas|///|Planos)", texto[start:])
+            if end_conduta:
+                conteudo = texto[start : start + end_conduta.start()]
+            else:
+                conteudo = texto[start:]
+        
+        # Limpa o cabeçalho (ex: "NEURO:") do conteúdo capturado
+        pattern_clean = r"^(NEURO|Neuro|RESP|Resp|CV:|ACV:|TGI|RENAL|Renal|TGU|INFECTO|Infecto|Hemato|GERAL|Geral|Ext\.|Miscelânea|Outros|Respiratória|Neurologia|Cardiovascular|Gastro|Urológico|Infecciosa)[:.]\s*"
+        conteudo = re.sub(pattern_clean, "", conteudo).strip()
         resultado[chave] = conteudo
+        
     return resultado
 
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     if not texto: return ""
     novo_texto = texto
+    
     if dados_novos.get('tax'):
         novo_texto = re.sub(r"TAX:\s*[\d.,]+\s*ºC?", "", novo_texto, flags=re.IGNORECASE)
     if dados_novos.get('quant'):
         novo_texto = re.sub(r"Diurese:\s*[\d.,]+\s*(ml)?", "", novo_texto, flags=re.IGNORECASE)
     if dados_novos.get('bh'):
         novo_texto = re.sub(r"BH:\s*[+-]?\s*[\d.,]+", "", novo_texto, flags=re.IGNORECASE)
+        
     if limpar_labs:
         novo_texto = re.sub(r"\[Labs:.*?\]", "", novo_texto, flags=re.IGNORECASE)
         novo_texto = re.sub(r"Dados:\s*$", "", novo_texto.strip())
+        
+    # Limpeza de pontuação duplicada
     novo_texto = re.sub(r"\.\s*\.", ".", novo_texto)
     novo_texto = re.sub(r"\s+", " ", novo_texto)
     return novo_texto.strip()
@@ -287,7 +306,7 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
 # 4. INTERFACE STREAMLIT
 # ==============================================================================
 
-st.title("🏥 Gerador de Evolução UTI")
+st.title("🏥 Gerador de Evolução UTI - V35.1")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -296,8 +315,9 @@ with st.sidebar:
     tax = st.text_input("TAX (ºC)")
     diurese = st.text_input("Diurese (ml)")
     bh = st.text_input("Balanço Hídrico")
+    st.markdown("---")
     st.info("Copie a evolução anterior:")
-    txt_ant = st.text_area("Anterior", height=150)
+    txt_ant = st.text_area("Anterior", height=200, help="Cole aqui a evolução do dia anterior para extração de dados.")
 
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
@@ -327,7 +347,7 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
                 if ant and val != ant: labs_preenchidos[chave] = f"{ant}->{val}"
                 else: labs_preenchidos[chave] = val
     
-    outros = st.text_input("Outros Exames")
+    outros = st.text_input("Outros Exames (Texto livre)")
     if outros: labs_preenchidos["Outros"] = outros
 
 # --- SISTEMAS ---
@@ -341,13 +361,17 @@ for sis in sistemas:
     prev_text_raw = texto_antigo_parseado.get(sis, "")
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
+    
+    # Verifica se há novos labs para este sistema
     for k in mapa_abrev:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
     prev_text_limpo_dados = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
-    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""), expanded=False):
+    # Título do Expander com preview
+    preview = f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""
+    with st.expander(f"**{sis}**{preview}", expanded=False):
         
         escolhas = st.multiselect(
             f"Selecione as frases para {sis}:", 
@@ -357,56 +381,65 @@ for sis in sistemas:
         
         frases_do_sistema = []
         
-        for i, item in enumerate(escolhas):
+        # --- LÓGICA CORRIGIDA: Usa Hash do item para garantir que os widgets não sumam ---
+        for item in escolhas:
             texto_base = item
             tem_barra = "/" in item and not any(tp in item for tp in TERMOS_PROTEGIDOS)
             
+            # Gera chave única baseada no TEXTO, não no índice
+            item_hash = criar_hash_estavel(item)
+            
             if tem_barra:
                 opcoes_radio = [x.strip() for x in item.split("/")]
+                # Chave robusta
                 sub_escolha = st.radio(
-                    f"Refinar: {item[:30]}...", 
+                    f"Refinar: {item[:40]}...", 
                     opcoes_radio, 
-                    key=f"radio_{sis}_{i}",
+                    key=f"radio_{sis}_{item_hash}",
                     horizontal=True
                 )
                 texto_base = sub_escolha
             
+            # Preenchimento de variáveis {placeholder}
             if "{" in texto_base:
                 match = re.search(r"\{(.*?)\}", texto_base)
                 label_ph = match.group(1) if match else "valor"
+                
+                # Se o dado já existe nos vitais (ex: tax, bh), usa direto
                 if label_ph in dados_vitais and dados_vitais[label_ph]:
                     texto_base = texto_base.replace(f"{{{label_ph}}}", dados_vitais[label_ph])
                     rastreador_uso.add(label_ph)
                 else:
+                    # Input manual para variável
                     val_input = st.text_input(
                         f"✏️ Preencha **{label_ph}** para: *'{texto_base}'*", 
-                        key=f"in_{sis}_{item}_{label_ph}"
+                        key=f"in_{sis}_{item_hash}_{label_ph}"
                     )
                     if val_input: texto_base = texto_base.replace(f"{{{label_ph}}}", val_input)
-                    else: texto_base = re.sub(r'\{.*?\}', '', texto_base)
+                    else: texto_base = re.sub(r'\{.*?\}', '', texto_base) # Limpa se vazio
             
             frases_do_sistema.append(texto_base)
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
-        # --- LÓGICA DE SUBSTITUIÇÃO (REGRA DE OURO) ---
+        # --- MONTAGEM DO TEXTO DO SISTEMA ---
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
         if frases_do_sistema:
-            # Caso A: Marcou no menu -> Substitui Anterior
+            # Opção A: Usuário selecionou frases -> Substitui o anterior completamente
             texto_final_sis = ". ".join(partes)
         elif complemento:
-            # Caso B: Só texto livre -> Soma ao anterior
+            # Opção B: Só escreveu complemento -> Adiciona ao anterior (se existir)
             if prev_text_limpo_dados:
                 texto_final_sis = f"{prev_text_limpo_dados} {complemento}"
             else:
                 texto_final_sis = complemento
         else:
-            # Caso C: Nada -> Mantém anterior
+            # Opção C: Nada feito -> Mantém o anterior
             texto_final_sis = prev_text_limpo_dados
             
-        # Append Vitais
+        # Append Vitais automáticos (apenas se não usados no texto)
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -423,11 +456,14 @@ for sis in sistemas:
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
                 l_txt.append(f"{abreviacao}: {labs_preenchidos[nome_interno]}")
+        
+        # Inserção de "Outros" exames especificamente no Infecto
         if sis == "INFECTO" and "Outros" in labs_preenchidos:
             l_txt.append(labs_preenchidos["Outros"])
             
         if l_txt:
             l_str = " [Labs: " + " | ".join(l_txt) + "]"
+            # Evita duplicar labs se já estiverem no texto
             if l_str not in texto_final_sis:
                 texto_final_sis = (texto_final_sis + "." + l_str) if texto_final_sis else ("Dados: " + l_str)
 
@@ -442,16 +478,24 @@ st.header("📝 Resultado Final")
 hoje = datetime.date.today().strftime('%d/%m/%Y')
 texto_completo = f"=== EVOLUÇÃO - LEITO {leito} ({hoje}) ===\n\n"
 
-if blocos_finais["CONTEXTO"]: 
+# Contexto sempre primeiro
+if blocos_finais.get("CONTEXTO"): 
     texto_completo += f"{blocos_finais['CONTEXTO']}.\n\n"
 
+# Loop pelos sistemas restantes
 for sis in sistemas[1:]: 
-    conteudo = blocos_finais[sis]
-    if conteudo and conteudo != "Dados: [Labs: ]":
+    conteudo = blocos_finais.get(sis, "")
+    
+    # Validação robusta: Mostra se tiver conteúdo OU se for INFECTO/GERAL com dados prévios
+    # O bug anterior removia INFECTO se só tivesse labs. Corrigido.
+    eh_dado_lab_puro = conteudo.startswith("Dados: [Labs:")
+    tem_conteudo_real = len(conteudo) > 3
+    
+    if tem_conteudo_real:
         texto_completo += f"{sis}: {conteudo}.\n"
 
-# Extração de condutas baseada no texto JÁ MONTADO
-all_text = " ".join(blocos_finais.values())
+# Extração de condutas
+all_text = " ".join([v for k,v in blocos_finais.items()])
 condutas_finais = extrair_condutas_inteligente(all_text, GATILHOS_CONDUTA)
 
 texto_completo += "\n/// CONDUTAS ///\n"
@@ -461,5 +505,4 @@ if condutas_finais:
 else:
     texto_completo += "- Mantidas.\n"
 
-st.text_area("Copie aqui:", value=texto_completo, height=400)
-
+st.text_area("Copie aqui:", value=texto_completo, height=500)
