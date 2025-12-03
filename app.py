@@ -3,7 +3,7 @@ import re
 import datetime
 
 # ==============================================================================
-# CONFIGURAÇÕES DA PÁGINA
+# 1. CONFIGURAÇÕES VISUAIS
 # ==============================================================================
 st.set_page_config(page_title="Gerador de Evolução UTI", page_icon="🏥", layout="wide")
 
@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. LISTAS E BANCO DE DADOS
+# 2. BANCO DE DADOS E LISTAS (DEFINIDOS NO TOPO PARA EVITAR ERROS)
 # ==============================================================================
 
 GRUPOS_CONFLITO = {
@@ -29,13 +29,25 @@ GRUPOS_CONFLITO = {
     "TEMP": ["febril", "afebril", "tax", "curva térmica", "pico febril"],
     "VENT": ["tot", "tqt", "vni", "cateter", "cn", "máscara", "venturi", "macronebu", "eupneico", "ar ambiente", "aa", "vm via", "bipap", "cpap"],
     "RITMO": ["ritmo sinusal", "fibrilação atrial", "fa ", "bradicardia", "taquicardia", "ritmo de marcapasso"],
-    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"]
+    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"],
+    "DEJ": ["dejeções presentes", "sem dejeções", "dejeções ausentes", "constipado", "diarreia"],
+    "SNG": ["retirado sng", "sng aberta", "sng fechada"]
 }
 
 TERMOS_PROTEGIDOS = [
     "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
     "ml/kg", "ml/kg/h", "L/min", "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
     "24/24h", "12/12h", "AA", "PO", "SVD", "CN", "TOT", "TQT", "UI/h"
+]
+
+GATILHOS_CONDUTA = [
+    "realizo", "realizado", "fiz", "feito", "solicito", "solicitado", "peço", 
+    "inicio", "iniciado", "começo", "mantenho", "mantido", "suspendo", "suspenso", 
+    "retiro", "retirado", "ajusto", "ajustado", "corrijo", "corrigido", "troco", 
+    "trocado", "desligo", "desligado", "aumento", "aumentado", "reduzo", "reduzido", 
+    "prescrevo", "prescrito", "instalo", "instalado", "passo", "passado", 
+    "otimizo", "otimizado", "escalono", "escalonado", "descalono", "adiciono", "associo",
+    "transiciono", "deambulou", "sedestrou", "desmamado", "exteriorizou", "reabordado", "feita"
 ]
 
 MAPA_EXAMES_SISTEMA = {
@@ -56,6 +68,36 @@ SINONIMOS_BUSCA = {
     "TGO": ["tgo", "ast"], "TGP": ["tgp", "alt"], "Bilirrubinas": ["bt", "bilirrubina total"]
 }
 
+# --- FUNÇÃO DE CONDUTAS (DEFINIDA AQUI PARA EVITAR ERRO DE LEITURA) ---
+def extrair_condutas_inteligente(texto_completo, gatilhos):
+    """
+    Extrai frases que começam com verbos de ação definidos na lista 'gatilhos'.
+    """
+    if not texto_completo: return []
+    
+    # Prepara o regex com os gatilhos passados como argumento
+    verbos_regex = r"|".join([re.escape(v) for v in gatilhos])
+    
+    # Divide o texto em orações
+    fatias = re.split(r'[.,;]\s+', texto_completo)
+    condutas_finais = []
+    
+    for fatia in fatias:
+        fatia = fatia.strip()
+        if not fatia: continue
+        
+        # Verifica se começa com verbo de ação
+        match = re.search(rf"^({verbos_regex})\b", fatia, re.IGNORECASE)
+        
+        if match:
+            # Ignora se tiver "não" antes
+            if re.search(r"\bn[ãa]o\s+" + re.escape(match.group(1)), fatia, re.IGNORECASE):
+                continue
+            condutas_finais.append(fatia)
+            
+    return sorted(list(set(condutas_finais)))
+
+# --- BANCO DE FRASES COMPLETO E CORRIGIDO ---
 DB_FRASES = {
     "CONTEXTO": [
         "PO de {procedimento}, sem intercorrências",
@@ -187,7 +229,7 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 2. FUNÇÕES DE SUPORTE
+# 3. FUNÇÕES DE SUPORTE
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
@@ -292,39 +334,12 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     return novo_texto.strip()
 
 # ==============================================================================
-# NOVA FUNÇÃO DE CONDUTAS INTELIGENTES
-# ==============================================================================
-def extrair_condutas_inteligente(texto_completo):
-    # Regex para pegar verbos de ação no início de orações
-    # Pega: "Iniciado..." ou ", iniciado..." ou ". Iniciado..."
-    verbos_regex = r"|".join([re.escape(v) for v in GATILHOS_CONDUTA])
-    
-    # Divide o texto em "fatias" (orações) pelos sinais de pontuação
-    fatias = re.split(r'[.,;]\s+', texto_completo)
-    condutas_finais = []
-    
-    for fatia in fatias:
-        fatia = fatia.strip()
-        if not fatia: continue
-        
-        # Verifica se a fatia COMEÇA com um verbo de ação (ignorando case)
-        # O ^ garante que pega o verbo no começo da oração, evitando "não realizado"
-        match = re.search(rf"^({verbos_regex})\b", fatia, re.IGNORECASE)
-        
-        if match:
-            # Verifica se tem "não" antes (caso a quebra tenha falhado)
-            if re.search(r"\bn[ãa]o\s+" + re.escape(match.group(1)), fatia, re.IGNORECASE):
-                continue
-            condutas_finais.append(fatia)
-            
-    return sorted(list(set(condutas_finais))) # Remove duplicatas e ordena
-
-# ==============================================================================
-# 3. INTERFACE STREAMLIT
+# 4. INTERFACE STREAMLIT
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
 
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Paciente")
     leito = st.text_input("Leito", placeholder="Ex: 01")
@@ -368,6 +383,7 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
 # --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
+condutas_detectadas = [] # RE-ADICIONADO PARA CORREÇÃO FINAL
 rastreador_uso = set()
 
 st.markdown("---")
@@ -465,7 +481,7 @@ for sis in sistemas:
         blocos_finais[sis] = texto_final_sis.replace("..", ".").strip()
 
 # ==============================================================================
-# GERAÇÃO FINAL (COM CONDUTAS INTELIGENTES)
+# GERAÇÃO FINAL (COM CONDUTAS)
 # ==============================================================================
 st.markdown("---")
 st.header("📝 Resultado Final")
@@ -483,7 +499,7 @@ for sis in sistemas[1:]:
 
 # Extração de condutas baseada no texto JÁ MONTADO
 all_text = " ".join(blocos_finais.values())
-condutas_finais = extrair_condutas_inteligente(all_text)
+condutas_finais = extrair_condutas_inteligente(all_text, GATILHOS_CONDUTA)
 
 texto_completo += "\n/// CONDUTAS ///\n"
 if condutas_finais:
