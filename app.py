@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. BANCO DE DADOS
+# 1. LISTAS DE PROTEÇÃO E GATILHOS
 # ==============================================================================
 
 GRUPOS_CONFLITO = {
@@ -35,7 +35,7 @@ GRUPOS_CONFLITO = {
 TERMOS_PROTEGIDOS = [
     "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
     "ml/kg", "ml/kg/h", "L/min", "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
-    "24/24h", "12/12h", "AA", "PO", "SVD", "CN", "TOT", "TQT"
+    "24/24h", "12/12h", "AA", "PO", "SVD", "CN", "TOT", "TQT", "UI/h"
 ]
 
 GATILHOS_CONDUTA = [
@@ -66,22 +66,27 @@ SINONIMOS_BUSCA = {
     "TGO": ["tgo", "ast"], "TGP": ["tgp", "alt"], "Bilirrubinas": ["bt", "bilirrubina total"]
 }
 
+# ==============================================================================
+# 2. BANCO DE DADOS CORRIGIDO (SUAS FRASES)
+# ==============================================================================
+# ATENÇÃO: Aspas internas corrigidas e vírgulas adicionadas.
+
 DB_FRASES = {
     "CONTEXTO": [
-        "PO imediato de {procedimento}, sem intercorrências",
+        "PO de {procedimento}, sem intercorrências",
+        "Paciente {idade}, portador de {comorbidades}",
         "PO tardio de {procedimento} ({data}), evoluindo estável",
-        "Admissão na UTI pós {procedimento}",
+        "Admissão na UTI pós {procedimento} / com quadro de / trazido para UTI por",
         "Paciente em tratamento de Choque Séptico (Foco: {foco})",
-        "Neurocrítico (HIC/AVE/TCE), medidas de neuroproteção mantidas",
         "Reabordado cirurgicamente em {data} para {procedimento}",
         "Internação prolongada por complicações de {causa}",
         "Paciente em cuidados paliativos / Limitação de esforço terapêutico"
     ],
     "NEURO": [
         "RASS 0, vigil, colaborativo, orientado",
-        "RASS -1 a -3, sonolento mas despertável ao chamado",
+        "RASS -1 a -3",
         "RASS -4/-5, comatoso / Agitado (RASS +)",
-        "Sem sedação / Desligada sedação / Sedação suspensa",
+        "Sem sedação / Desligada sedação / Sedação suspensa / reduzido sedação",
         "Sedado com {drogas} (RASS {rass})",
         "Analgesia otimizada com {droga} / Necessitou ansiólise ({droga})",
         "Pupilas isocóricas / Anisocoria / Pupilas {tamanho}",
@@ -90,10 +95,10 @@ DB_FRASES = {
         "Reflexos de tronco preservados / Abolidos",
         "Sem crises convulsivas / Crises no período (cd: {conduta})",
         "Deambulou no período / Sedestrou / Restrito ao leito",
-        "Sialorréico (medidas xerostômicas) / Higiene oral precária",
+        "Sialorréico (medidas xerostômicas)",
         "Com bom controle de tronco / Sem controle de tronco",
-        "Delirium hiperativo (CAM-ICU+) / Hipoativo",
-        "CPOT negativo / positivo | BPS negativo / positivo",
+        "CAM-ICU+ / CAM-ICU negativo",
+        "CPOT negativo / positivo | BPS negativo / BPS positivo",
         "Disártrico / Afásico / Contactuante",
         "NIHSS {pts} pts ({detalhe})",
         "Sem sinais de encefalopatia / Com sinais de encefalopatia"
@@ -101,14 +106,18 @@ DB_FRASES = {
     "CARDIO": [
         "Hemodinâmica estável, sem drogas vasoativas (DVA)",
         "Instabilidade hemodinâmica / Choque",
-        "Em uso de Noradrenalina {dose} mcg/kg/min",
+        "Em uso de Noradrenalina {dose} mcg/kg/min / Em uso de Noradrenalina {dose} mcg/kg/min e Vasopressina {dose} UI/h",
+        "Iniciado Dobutamina {dose} mcg/kg/min",
         "Em desmame de DVA (Noradrenalina {dose})",
+        "Desligo DVA / DVA desligada",
+        "Iniciado RCP",
+        "POCUS evidenciando",
         "Desmamado vasodilatador, iniciado oral ({droga})",
         "Associado anti-hipertensivo oral ({droga})",
         "Ritmo Sinusal / Fibrilação Atrial (FA)",
         "FA controlada com {droga} (FC {fc}bpm)",
         "Bem perfundido (TEC < 3s, Lac normal)",
-        "Má perfusão (frio, TEC > 4s, livedo)",
+        "Com sinais de má perfusão (frio, TEC > 4s, livedo)",
         "Hipertenso, em uso de Nitroprussiato {vazao} ml/h",
         "Hipotenso, realizada expansão volêmica com {quant} ml",
         "Extremidades quentes / Extremidades frias",
@@ -116,22 +125,30 @@ DB_FRASES = {
         "Solicitado Ecocardiograma (ECOTT)"
     ],
     "RESP": [
-        "Eupneico em ar ambiente (AA), confortável",
+        "Eupneico em ar ambiente (AA), confortável, com boa SO2",
+        "Padrão {A,B,C pulmonar}",
+        "PCO2 elevada",
         "Em uso de Cateter Nasal (CN) {litros} L/min",
+        "Boas trocas / Trocas ruins {P/F}",
+        "Melhora da hipoxemia / Tolerando SO2 mais baixas",
+        "Com atividade expiratória / com atividade expiratória",
+        "Apresentando taquidispneia",
         "Em Máscara de Venturi {perc}%",
         "VM via TOT, modo {modo} / VM via TQT",
+        "TQT plástica / TQT metálica",
         "Parâmetros: Vol {vol}ml, PEEP {peep}, FIO2 {fio}%",
         "Desconforto respiratório leve / moderado / intenso",
         "Em VNI intermitente ({motivo})",
         "Extubação realizada no período sem intercorrências",
         "Ausculta: Murmúrio vesicular presente / Creptos em {loc} / Roncos",
         "Secretividade aumentada, aspecto {aspecto}",
-        "Dreno de tórax à {lado} oscilante / borbulhante / improdutivo",
-        "Hiperemia e secreção em estoma de traqueostomia",
+        "Dreno de tórax à {lado} oscilante / dreno borbulhante / dreno improdutivo / produtivo",
         "TC de Tórax: {laudo}"
     ],
     "TGI": [
-        "Dieta oral liberada e bem aceita / Aceitação parcial",
+        "Dieta oral liberada / Aceitação parcial",
+        "Dieta oral zero / Dieta oral liberada pela fonoaudiologia",
+        "SNG produtiva / SNG improdutiva",
         "Dieta enteral via SNE/GTT a {vazao}ml/h",
         "Iniciado dieta enteral / Progressão de dieta",
         "Suspenso NPT, iniciado dieta enteral",
@@ -140,22 +157,22 @@ DB_FRASES = {
         "Retirado SNG no período",
         "Abdome flácido, indolor / Globoso e distendido",
         "Ruídos hidroaéreos presentes / RHA diminuídos ou ausentes",
-        "Evacuações presentes ({aspecto}) / Ausentes",
+        "Dejeções presentes ({aspecto}) / Dejeções Ausentes",
         "Dejeções ausentes há {dias} dias (Iniciado laxativos)",
-        "Glicemias controladas / Labéis (Iniciado Insulina)",
-        "Em uso de procinéticos e inibidor de bomba de prótons (IBP)",
-        "Saída de secreção peri-sonda (GTT/SNE)"
+        "Glicemias controladas / Glicemias com escapes (ajustado insulina / iniciado insulina)",
+        "Em uso de procinéticos / IBP profilático / IBP pleno"
     ],
     "RENAL": [
         "Diurese espontânea conservada e clara",
+        "Em TSR / iniciou HD / não tolerou HD",
         "Diurese via Sonda Vesical (SVD), aspecto {aspecto}",
-        "Irrigação vesical contínua (hematúria {tipo}) / Sem irrigação",
-        "Oligúria, realizado estímulo diurético com {droga}",
-        "Poliúria (> 3ml/kg/h), vigiando eletrólitos",
-        "Função renal preservada / Função renal alterada (estável)",
+        "Irrigação vesical contínua / Sem irrigação",
+        "Oligúrico / realizado estímulo diurético / reduzido diurético",
+        "Poliúria (> 3ml/kg/h) / anúrico",
+        "Função renal preservada / Função renal alterada (em melhora / em piora)",
         "Função renal em melhora / Função renal em piora",
         "Em Hemodiálise (HD) intermitente / Em CVVHD",
-        "Sem distúrbios hidroeletrolíticos graves / Reposição de K/Mg",
+        "Sem distúrbios hidroeletrolíticos graves / Reposição de K/Mg/Cai/Na/água",
         "Nefrostomia produtiva ({quant}ml) / improdutiva",
         "Balanço Hídrico negativo / BH positivo / BH neutro"
     ],
@@ -165,10 +182,13 @@ DB_FRASES = {
         "Em uso de antibiótico: {atb} / Sem antibióticos",
         "Escalonado antibiótico para {novo} / Suspenso antibiótico",
         "Sem foco infeccioso aparente",
-        "Curativos limpos e secos / Deiscência de ferida operatória",
-        "Sem sinais flogísticos em acessos venosos",
-        "Leucocitose mantida / Leucograma em melhora",
-        "Hb estável / Hb em queda"
+        "Curativos limpos e secos / Deiscência de ferida operatória / piora infecciosa",
+        "Sem sinais de infecção em óstio de cateter / com sinais de infecção de óstio de cateter",
+        "Leucocitose mantida / Leucograma em melhora / leucograma elevado / leucograma em piora",
+        "Hb estável / Hb em queda",
+        "Atb ajustado para função renal / atb dose full",
+        "Sem exteriorizar sangramentos / sangramento ativo em {sítio}",
+        "Feito CH / iniciado anticoagulação plena"
     ],
     "GERAL": [
         "Retirado cateter / Trocado CVC / PAI / Sorensen",
@@ -182,46 +202,26 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 2. FUNÇÕES DE SUPORTE
+# 3. FUNÇÕES DE SUPORTE
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
-    """
-    Busca valores de exames, tolerando formatações com ou sem espaço (Ex: Na:140 ou Na 140).
-    Lê a cadeia inteira (140->145) e lida com R/Reposto.
-    """
     if not texto: return None
     termos = SINONIMOS_BUSCA.get(chave, [chave.lower()])
-    
     for t in termos:
-        # REGEX PODEROSO V26.0:
-        # \b{t} -> O termo
-        # [:=\s]* -> Separadores opcionais (pega 'Na:' 'Na ' 'Na: ')
-        # ([0-9][0-9.,\s>\-]*) -> O valor (começa com numero, pode ter setas)
-        # ((?:R|reposto)?) -> Opcional final de reposição
-        
         pattern = rf"\b{re.escape(t)}[:=\s]*([0-9][0-9.,\s>\-]*(?:R|reposto)?)"
-        
         match = re.search(pattern, texto, re.IGNORECASE)
         if match:
             cadeia = match.group(1).strip()
-            
-            # Verifica Reposição
             match_reposto = re.search(r'([0-9.,]+)\s*[-–]?\s*(R|reposto)$', cadeia, re.IGNORECASE)
-            
             if match_reposto:
                 val = match_reposto.group(1)
                 indicador = match_reposto.group(2)
                 return f"{val} - {indicador}"
             else:
-                # Limpa setas e pega o último número real
-                # Substitui setas por espaços para facilitar o split
                 cadeia_limpa = re.sub(r'[>\-]', ' ', cadeia)
                 numeros = [n for n in cadeia_limpa.split() if n[0].isdigit()]
-                
-                if numeros:
-                    return numeros[-1]
-                    
+                if numeros: return numeros[-1]
     return None
 
 def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
@@ -230,7 +230,6 @@ def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
         if f"{{{k}}}" in frase:
             if v: frase = frase.replace(f"{{{k}}}", v)
             else: frase = frase.replace(f"{{{k}}}", "")
-            
     if complemento_usuario:
         if "{" in frase:
             inicio = frase.find("{")
@@ -239,7 +238,6 @@ def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
                 frase = frase[:inicio] + complemento_usuario + frase[fim+1:]
         else:
             frase += f" {complemento_usuario}"
-            
     return re.sub(r'\{.*?\}', '', frase).strip()
 
 def extrair_texto_anterior(texto_completo):
@@ -272,19 +270,15 @@ def extrair_texto_anterior(texto_completo):
 
 def limpar_conflitos_semanticos(texto_antigo, frases_novas):
     if not texto_antigo or not frases_novas: return texto_antigo
-    
     grupos_acionados = set()
     for frase in frases_novas:
         frase_lower = frase.lower()
         for grupo, palavras in GRUPOS_CONFLITO.items():
             if any(p in frase_lower for p in palavras):
                 grupos_acionados.add(grupo)
-    
     if not grupos_acionados: return texto_antigo
-    
     sentencas_antigas = re.split(r'(?<=\.)\s+', texto_antigo)
     sentencas_finais = []
-    
     for sentenca in sentencas_antigas:
         sentenca_lower = sentenca.lower()
         deletar = False
@@ -293,37 +287,31 @@ def limpar_conflitos_semanticos(texto_antigo, frases_novas):
             if any(p in sentenca_lower for p in palavras_grupo):
                 deletar = True
                 break
-        if not deletar:
-            sentencas_finais.append(sentenca)
-            
+        if not deletar: sentencas_finais.append(sentenca)
     return " ".join(sentencas_finais).strip()
 
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     if not texto: return ""
     novo_texto = texto
-    
     if dados_novos.get('tax'):
         novo_texto = re.sub(r"TAX:\s*[\d.,]+\s*ºC?", "", novo_texto, flags=re.IGNORECASE)
     if dados_novos.get('quant'):
         novo_texto = re.sub(r"Diurese:\s*[\d.,]+\s*(ml)?", "", novo_texto, flags=re.IGNORECASE)
     if dados_novos.get('bh'):
         novo_texto = re.sub(r"BH:\s*[+-]?\s*[\d.,]+", "", novo_texto, flags=re.IGNORECASE)
-        
     if limpar_labs:
         novo_texto = re.sub(r"\[Labs:.*?\]", "", novo_texto, flags=re.IGNORECASE)
         novo_texto = re.sub(r"Dados:\s*$", "", novo_texto.strip())
-
     novo_texto = re.sub(r"\.\s*\.", ".", novo_texto)
     novo_texto = re.sub(r"\s+", " ", novo_texto)
     return novo_texto.strip()
 
 # ==============================================================================
-# 3. INTERFACE STREAMLIT
+# 4. INTERFACE
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("Paciente")
     leito = st.text_input("Leito", placeholder="Ex: 01")
@@ -336,7 +324,6 @@ with st.sidebar:
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
 
-# --- LABS ---
 with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     cols = [col1, col2, col3, col4]
@@ -364,7 +351,6 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     outros = st.text_input("Outros Exames")
     if outros: labs_preenchidos["Outros"] = outros
 
-# --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
@@ -373,24 +359,20 @@ rastreador_uso = set()
 st.markdown("---")
 
 for sis in sistemas:
-    # 1. Recupera anterior
     prev_text_raw = texto_antigo_parseado.get(sis, "")
-    
-    # 2. Decide limpeza de Labs
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
     for k in mapa_abrev:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
-    # 3. Limpa texto (Vitais + Labs)
     prev_text_limpo_dados = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
     with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""), expanded=False):
         
         escolhas = st.multiselect(
             f"Selecione as frases para {sis}:", 
-            options=DB_FRASES[sis],
+            options=DB_FRASES.get(sis, []),
             key=f"multi_{sis}"
         )
         
@@ -428,13 +410,11 @@ for sis in sistemas:
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
-        # 4. Limpa Conflitos Semânticos
         if frases_do_sistema:
             prev_text_limpo_conflitos = limpar_conflitos_semanticos(prev_text_limpo_dados, frases_do_sistema)
         else:
             prev_text_limpo_conflitos = prev_text_limpo_dados
 
-        # 5. Montagem
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
@@ -445,7 +425,6 @@ for sis in sistemas:
         else:
             texto_final_sis = ". ".join(partes)
             
-        # Append Vitais
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -457,7 +436,6 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
-        # Append Labs (Novo Bloco)
         l_txt = []
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
@@ -477,9 +455,6 @@ for sis in sistemas:
                 condutas_detectadas.append(texto_final_sis)
                 break
 
-# ==============================================================================
-# GERAÇÃO FINAL
-# ==============================================================================
 st.markdown("---")
 st.header("📝 Resultado Final")
 
