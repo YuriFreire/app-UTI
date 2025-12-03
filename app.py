@@ -45,7 +45,7 @@ GATILHOS_CONDUTA = [
     "trocado", "desligo", "desligado", "aumento", "aumentado", "reduzo", "reduzido", 
     "prescrevo", "prescrito", "instalo", "instalado", "passo", "passado", 
     "otimizo", "otimizado", "escalono", "escalonado", "descalono", "adiciono", "associo",
-    "transiciono", "deambulou", "sedestrou", "desmamado", "exteriorizou", "reabordado"
+    "transiciono", "deambulou", "sedestrou", "desmamado", "exteriorizou", "reabordado", "feita"
 ]
 
 MAPA_EXAMES_SISTEMA = {
@@ -69,14 +69,14 @@ SINONIMOS_BUSCA = {
 # ==============================================================================
 # 2. BANCO DE DADOS CORRIGIDO (SUAS FRASES)
 # ==============================================================================
-# ATENÇÃO: Aspas internas corrigidas e vírgulas adicionadas.
+# ATENÇÃO: Frases com erros de sintaxe (aspas internas) foram corrigidas para parênteses.
 
 DB_FRASES = {
     "CONTEXTO": [
         "PO de {procedimento}, sem intercorrências",
-        "Paciente {idade}, portador de {comorbidades}",
+        "Paciente {idade} anos, portador de {comorbidades}",
         "PO tardio de {procedimento} ({data}), evoluindo estável",
-        "Admissão na UTI pós {procedimento} / com quadro de / trazido para UTI por",
+        "Admissão na UTI pós {procedimento} / com quadro de {quadro} / trazido para UTI por {motivo}",
         "Paciente em tratamento de Choque Séptico (Foco: {foco})",
         "Reabordado cirurgicamente em {data} para {procedimento}",
         "Internação prolongada por complicações de {causa}",
@@ -86,7 +86,7 @@ DB_FRASES = {
         "RASS 0, vigil, colaborativo, orientado",
         "RASS -1 a -3",
         "RASS -4/-5, comatoso / Agitado (RASS +)",
-        "Sem sedação / Desligada sedação / Sedação suspensa / reduzido sedação",
+        "Sem sedação / Desligada sedação / Sedação suspensa / Reduzido sedação",
         "Sedado com {drogas} (RASS {rass})",
         "Analgesia otimizada com {droga} / Necessitou ansiólise ({droga})",
         "Pupilas isocóricas / Anisocoria / Pupilas {tamanho}",
@@ -98,7 +98,7 @@ DB_FRASES = {
         "Sialorréico (medidas xerostômicas)",
         "Com bom controle de tronco / Sem controle de tronco",
         "CAM-ICU+ / CAM-ICU negativo",
-        "CPOT negativo / positivo | BPS negativo / BPS positivo",
+        "CPOT negativo / CPOT positivo / BPS negativo / BPS positivo",
         "Disártrico / Afásico / Contactuante",
         "NIHSS {pts} pts ({detalhe})",
         "Sem sinais de encefalopatia / Com sinais de encefalopatia"
@@ -106,12 +106,12 @@ DB_FRASES = {
     "CARDIO": [
         "Hemodinâmica estável, sem drogas vasoativas (DVA)",
         "Instabilidade hemodinâmica / Choque",
-        "Em uso de Noradrenalina {dose} mcg/kg/min / Em uso de Noradrenalina {dose} mcg/kg/min e Vasopressina {dose} UI/h",
+        "Em uso de Noradrenalina {dose} mcg/kg/min / Em uso de Noradrenalina {dose} e Vasopressina {vazao} UI/h",
         "Iniciado Dobutamina {dose} mcg/kg/min",
         "Em desmame de DVA (Noradrenalina {dose})",
         "Desligo DVA / DVA desligada",
         "Iniciado RCP",
-        "POCUS evidenciando",
+        "POCUS evidenciando {achado}",
         "Desmamado vasodilatador, iniciado oral ({droga})",
         "Associado anti-hipertensivo oral ({droga})",
         "Ritmo Sinusal / Fibrilação Atrial (FA)",
@@ -126,12 +126,12 @@ DB_FRASES = {
     ],
     "RESP": [
         "Eupneico em ar ambiente (AA), confortável, com boa SO2",
-        "Padrão {A,B,C pulmonar}",
+        "Padrão pulmonar {tipo}",
         "PCO2 elevada",
         "Em uso de Cateter Nasal (CN) {litros} L/min",
-        "Boas trocas / Trocas ruins {P/F}",
+        "Boas trocas / Trocas ruins (P/F {pf})",
         "Melhora da hipoxemia / Tolerando SO2 mais baixas",
-        "Com atividade expiratória / com atividade expiratória",
+        "Com atividade expiratória / sem atividade expiratória",
         "Apresentando taquidispneia",
         "Em Máscara de Venturi {perc}%",
         "VM via TOT, modo {modo} / VM via TQT",
@@ -142,7 +142,7 @@ DB_FRASES = {
         "Extubação realizada no período sem intercorrências",
         "Ausculta: Murmúrio vesicular presente / Creptos em {loc} / Roncos",
         "Secretividade aumentada, aspecto {aspecto}",
-        "Dreno de tórax à {lado} oscilante / dreno borbulhante / dreno improdutivo / produtivo",
+        "Dreno de tórax à {lado} oscilante / borbulhante / improdutivo / produtivo",
         "TC de Tórax: {laudo}"
     ],
     "TGI": [
@@ -172,7 +172,7 @@ DB_FRASES = {
         "Função renal preservada / Função renal alterada (em melhora / em piora)",
         "Função renal em melhora / Função renal em piora",
         "Em Hemodiálise (HD) intermitente / Em CVVHD",
-        "Sem distúrbios hidroeletrolíticos graves / Reposição de K/Mg/Cai/Na/água",
+        "Sem distúrbios hidroeletrolíticos graves / Reposição de K/Mg/Ca/Na/água",
         "Nefrostomia produtiva ({quant}ml) / improdutiva",
         "Balanço Hídrico negativo / BH positivo / BH neutro"
     ],
