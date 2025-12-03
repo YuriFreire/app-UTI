@@ -18,19 +18,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. LISTAS DE PROTEÇÃO E GATILHOS
+# 1. LISTAS E BANCO DE DADOS
 # ==============================================================================
-
-GRUPOS_CONFLITO = {
-    "ATB": ["antibiótico", "atb", "sem atb", "tazocin", "meropenem", "vanco", "ceft", "pipetazo", "teicoplanina", "linezolida", "polimixina", "amicacina", "gentamicina", "ampicilina", "cipro", "levo", "metronidazol", "bactrim", "fluconazol", "micafungina", "anidulafungina"],
-    "SEDA": ["sedado", "sedação", "rass", "propofol", "fentanil", "midazolam", "precedex", "ketamina", "cetamina", "pancuronio", "cisatracurio", "sem sedação"],
-    "DIETA": ["dieta", "npt", "jejum", "oral", "enteral", "sne", "gtt", "parenteral", "suspensa", "liberada"],
-    "DVA": ["dva", "noradrenalina", "nora", "vasopressina", "vaso", "dobuta", "dobutamina", "nipride", "tridil", "adrenalina", "sem drogas vasoativas"],
-    "TEMP": ["febril", "afebril", "tax", "curva térmica", "pico febril"],
-    "VENT": ["tot", "tqt", "vni", "cateter", "cn", "máscara", "venturi", "macronebu", "eupneico", "ar ambiente", "aa", "vm via", "bipap", "cpap"],
-    "RITMO": ["ritmo sinusal", "fibrilação atrial", "fa ", "bradicardia", "taquicardia", "ritmo de marcapasso"],
-    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"]
-}
 
 TERMOS_PROTEGIDOS = [
     "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
@@ -66,16 +55,13 @@ SINONIMOS_BUSCA = {
     "TGO": ["tgo", "ast"], "TGP": ["tgp", "alt"], "Bilirrubinas": ["bt", "bilirrubina total"]
 }
 
-# ==============================================================================
-# 2. BANCO DE DADOS CORRIGIDO
-# ==============================================================================
-
+# --- FRASES CORRIGIDAS (SEM ERROS DE SINTAXE) ---
 DB_FRASES = {
     "CONTEXTO": [
         "PO de {procedimento}, sem intercorrências",
         "Paciente {idade}, portador de {comorbidades}",
         "PO tardio de {procedimento} ({data}), evoluindo estável",
-        "Admissão na UTI pós {procedimento} / Admissão com quadro de {quadro} / Trazido para UTI por {motivo}",
+        "Admissão na UTI pós {procedimento} / com quadro de {quadro} / trazido para UTI por {motivo}",
         "Paciente em tratamento de Choque Séptico (Foco: {foco})",
         "Reabordado cirurgicamente em {data} para {procedimento}",
         "Internação prolongada por complicações de {causa}",
@@ -97,7 +83,7 @@ DB_FRASES = {
         "Sialorréico (medidas xerostômicas)",
         "Com bom controle de tronco / Sem controle de tronco",
         "CAM-ICU+ / CAM-ICU negativo",
-        "CPOT negativo / CPOT positivo / BPS negativo / BPS positivo",
+        "CPOT negativo / CPOT positivo | BPS negativo / BPS positivo",
         "Disártrico / Afásico / Contactuante",
         "NIHSS {pts} pts ({detalhe})",
         "Sem sinais de encefalopatia / Com sinais de encefalopatia"
@@ -105,7 +91,7 @@ DB_FRASES = {
     "CARDIO": [
         "Hemodinâmica estável, sem drogas vasoativas (DVA)",
         "Instabilidade hemodinâmica / Choque",
-        "Em uso de Noradrenalina {dose} mcg/kg/min / Nora {dose} e Vasopressina {vazao} UI/h",
+        "Em uso de Noradrenalina {dose} mcg/kg/min / Em uso de Noradrenalina {dose} e Vasopressina {vazao} UI/h",
         "Iniciado Dobutamina {dose} mcg/kg/min",
         "Em desmame de DVA (Noradrenalina {dose})",
         "Desligo DVA / DVA desligada",
@@ -201,7 +187,7 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 3. FUNÇÕES DE SUPORTE
+# 2. FUNÇÕES DE SUPORTE
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
@@ -267,28 +253,6 @@ def extrair_texto_anterior(texto_completo):
         resultado[chave] = conteudo
     return resultado
 
-def limpar_conflitos_semanticos(texto_antigo, frases_novas):
-    if not texto_antigo or not frases_novas: return texto_antigo
-    grupos_acionados = set()
-    for frase in frases_novas:
-        frase_lower = frase.lower()
-        for grupo, palavras in GRUPOS_CONFLITO.items():
-            if any(p in frase_lower for p in palavras):
-                grupos_acionados.add(grupo)
-    if not grupos_acionados: return texto_antigo
-    sentencas_antigas = re.split(r'(?<=\.)\s+', texto_antigo)
-    sentencas_finais = []
-    for sentenca in sentencas_antigas:
-        sentenca_lower = sentenca.lower()
-        deletar = False
-        for grupo in grupos_acionados:
-            palavras_grupo = GRUPOS_CONFLITO[grupo]
-            if any(p in sentenca_lower for p in palavras_grupo):
-                deletar = True
-                break
-        if not deletar: sentencas_finais.append(sentenca)
-    return " ".join(sentencas_finais).strip()
-
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     if not texto: return ""
     novo_texto = texto
@@ -306,7 +270,7 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     return novo_texto.strip()
 
 # ==============================================================================
-# 4. INTERFACE STREAMLIT
+# 3. INTERFACE STREAMLIT
 # ==============================================================================
 
 st.title("🏥 Gerador de Evolução UTI")
@@ -361,6 +325,7 @@ rastreador_uso = set()
 st.markdown("---")
 
 for sis in sistemas:
+    # 1. Recupera anterior e limpa Vitais/Labs
     prev_text_raw = texto_antigo_parseado.get(sis, "")
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
@@ -368,6 +333,7 @@ for sis in sistemas:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
+    # Limpa apenas os vitais numéricos e labs, mantendo o texto clínico por enquanto
     prev_text_limpo_dados = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
     with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""), expanded=False):
@@ -412,20 +378,27 @@ for sis in sistemas:
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
-        if frases_do_sistema:
-            prev_text_limpo_conflitos = limpar_conflitos_semanticos(prev_text_limpo_dados, frases_do_sistema)
-        else:
-            prev_text_limpo_conflitos = prev_text_limpo_dados
-
+        # --- AQUI ESTÁ A LÓGICA DE SUBSTITUIÇÃO VS ADIÇÃO ---
+        
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
-        if not partes and prev_text_limpo_conflitos:
-            texto_final_sis = prev_text_limpo_conflitos
-        elif partes and prev_text_limpo_conflitos:
-            texto_final_sis = f"{prev_text_limpo_conflitos} {'. '.join(partes)}"
-        else:
+        if frases_do_sistema:
+            # CASO 1: Selecionou frases no menu -> SUBSTITUIÇÃO TOTAL (O anterior morre)
             texto_final_sis = ". ".join(partes)
+        
+        elif complemento:
+            # CASO 2: Só escreveu no livre, sem menu -> ADIÇÃO (Soma ao anterior)
+            if prev_text_limpo_dados:
+                texto_final_sis = f"{complemento}. {prev_text_limpo_dados}"
+            else:
+                texto_final_sis = complemento
+        
+        else:
+            # CASO 3: Não fez nada -> MANTÉM ANTERIOR
+            texto_final_sis = prev_text_limpo_dados
+
+        # -----------------------------------------------------
             
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
