@@ -18,21 +18,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. BANCO DE DADOS E LISTAS (DEFINIDOS NO TOPO PARA EVITAR ERROS)
+# 2. LISTAS E BANCO DE DADOS (NO TOPO PARA SEGURANÇA)
 # ==============================================================================
-
-GRUPOS_CONFLITO = {
-    "ATB": ["antibiótico", "atb", "sem atb", "tazocin", "meropenem", "vanco", "ceft", "pipetazo", "teicoplanina", "linezolida", "polimixina", "amicacina", "gentamicina", "ampicilina", "cipro", "levo", "metronidazol", "bactrim", "fluconazol", "micafungina", "anidulafungina"],
-    "SEDA": ["sedado", "sedação", "rass", "propofol", "fentanil", "midazolam", "precedex", "ketamina", "cetamina", "pancuronio", "cisatracurio", "sem sedação"],
-    "DIETA": ["dieta", "npt", "jejum", "oral", "enteral", "sne", "gtt", "parenteral", "suspensa", "liberada"],
-    "DVA": ["dva", "noradrenalina", "nora", "vasopressina", "vaso", "dobuta", "dobutamina", "nipride", "tridil", "adrenalina", "sem drogas vasoativas"],
-    "TEMP": ["febril", "afebril", "tax", "curva térmica", "pico febril"],
-    "VENT": ["tot", "tqt", "vni", "cateter", "cn", "máscara", "venturi", "macronebu", "eupneico", "ar ambiente", "aa", "vm via", "bipap", "cpap"],
-    "RITMO": ["ritmo sinusal", "fibrilação atrial", "fa ", "bradicardia", "taquicardia", "ritmo de marcapasso"],
-    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"],
-    "DEJ": ["dejeções presentes", "sem dejeções", "dejeções ausentes", "constipado", "diarreia"],
-    "SNG": ["retirado sng", "sng aberta", "sng fechada"]
-}
 
 TERMOS_PROTEGIDOS = [
     "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
@@ -68,36 +55,6 @@ SINONIMOS_BUSCA = {
     "TGO": ["tgo", "ast"], "TGP": ["tgp", "alt"], "Bilirrubinas": ["bt", "bilirrubina total"]
 }
 
-# --- FUNÇÃO DE CONDUTAS (DEFINIDA AQUI PARA EVITAR ERRO DE LEITURA) ---
-def extrair_condutas_inteligente(texto_completo, gatilhos):
-    """
-    Extrai frases que começam com verbos de ação definidos na lista 'gatilhos'.
-    """
-    if not texto_completo: return []
-    
-    # Prepara o regex com os gatilhos passados como argumento
-    verbos_regex = r"|".join([re.escape(v) for v in gatilhos])
-    
-    # Divide o texto em orações
-    fatias = re.split(r'[.,;]\s+', texto_completo)
-    condutas_finais = []
-    
-    for fatia in fatias:
-        fatia = fatia.strip()
-        if not fatia: continue
-        
-        # Verifica se começa com verbo de ação
-        match = re.search(rf"^({verbos_regex})\b", fatia, re.IGNORECASE)
-        
-        if match:
-            # Ignora se tiver "não" antes
-            if re.search(r"\bn[ãa]o\s+" + re.escape(match.group(1)), fatia, re.IGNORECASE):
-                continue
-            condutas_finais.append(fatia)
-            
-    return sorted(list(set(condutas_finais)))
-
-# --- BANCO DE FRASES COMPLETO E CORRIGIDO ---
 DB_FRASES = {
     "CONTEXTO": [
         "PO de {procedimento}, sem intercorrências",
@@ -229,8 +186,23 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 3. FUNÇÕES DE SUPORTE
+# 3. FUNÇÕES DE SUPORTE E LÓGICA
 # ==============================================================================
+
+def extrair_condutas_inteligente(texto_completo, gatilhos):
+    if not texto_completo: return []
+    verbos_regex = r"|".join([re.escape(v) for v in gatilhos])
+    fatias = re.split(r'[.,;]\s+', texto_completo)
+    condutas_finais = []
+    for fatia in fatias:
+        fatia = fatia.strip()
+        if not fatia: continue
+        match = re.search(rf"^({verbos_regex})\b", fatia, re.IGNORECASE)
+        if match:
+            if re.search(r"\bn[ãa]o\s+" + re.escape(match.group(1)), fatia, re.IGNORECASE):
+                continue
+            condutas_finais.append(fatia)
+    return sorted(list(set(condutas_finais)))
 
 def buscar_valor_antigo(texto, chave):
     if not texto: return None
@@ -294,28 +266,6 @@ def extrair_texto_anterior(texto_completo):
         conteudo = re.sub(r"^(NEURO|Neuro|RESP|Resp|CV:|ACV:|TGI|RENAL|Renal|TGU|INFECTO|Infecto|Hemato|GERAL|Geral)[:.]\s*", "", conteudo).strip()
         resultado[chave] = conteudo
     return resultado
-
-def limpar_conflitos_semanticos(texto_antigo, frases_novas):
-    if not texto_antigo or not frases_novas: return texto_antigo
-    grupos_acionados = set()
-    for frase in frases_novas:
-        frase_lower = frase.lower()
-        for grupo, palavras in GRUPOS_CONFLITO.items():
-            if any(p in frase_lower for p in palavras):
-                grupos_acionados.add(grupo)
-    if not grupos_acionados: return texto_antigo
-    sentencas_antigas = re.split(r'(?<=\.)\s+', texto_antigo)
-    sentencas_finais = []
-    for sentenca in sentencas_antigas:
-        sentenca_lower = sentenca.lower()
-        deletar = False
-        for grupo in grupos_acionados:
-            palavras_grupo = GRUPOS_CONFLITO[grupo]
-            if any(p in sentenca_lower for p in palavras_grupo):
-                deletar = True
-                break
-        if not deletar: sentencas_finais.append(sentenca)
-    return " ".join(sentencas_finais).strip()
 
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     if not texto: return ""
@@ -383,7 +333,6 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
 # --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
-condutas_detectadas = [] # RE-ADICIONADO PARA CORREÇÃO FINAL
 rastreador_uso = set()
 
 st.markdown("---")
@@ -440,21 +389,24 @@ for sis in sistemas:
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
-        if frases_do_sistema:
-            prev_text_limpo_conflitos = limpar_conflitos_semanticos(prev_text_limpo_dados, frases_do_sistema)
-        else:
-            prev_text_limpo_conflitos = prev_text_limpo_dados
-
+        # --- LÓGICA DE SUBSTITUIÇÃO (REGRA DE OURO) ---
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
-        if not partes and prev_text_limpo_conflitos:
-            texto_final_sis = prev_text_limpo_conflitos
-        elif partes and prev_text_limpo_conflitos:
-            texto_final_sis = f"{prev_text_limpo_conflitos} {'. '.join(partes)}"
-        else:
+        if frases_do_sistema:
+            # Caso A: Marcou no menu -> Substitui Anterior
             texto_final_sis = ". ".join(partes)
+        elif complemento:
+            # Caso B: Só texto livre -> Soma ao anterior
+            if prev_text_limpo_dados:
+                texto_final_sis = f"{prev_text_limpo_dados} {complemento}"
+            else:
+                texto_final_sis = complemento
+        else:
+            # Caso C: Nada -> Mantém anterior
+            texto_final_sis = prev_text_limpo_dados
             
+        # Append Vitais
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -466,6 +418,7 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
+        # Append Labs
         l_txt = []
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
