@@ -18,12 +18,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. BANCO DE DADOS
+# 1. BANCO DE DADOS E LISTAS
 # ==============================================================================
 
+GRUPOS_CONFLITO = {
+    "ATB": ["antibiótico", "atb", "sem atb", "tazocin", "meropenem", "vanco", "ceft", "pipetazo", "teicoplanina", "linezolida", "polimixina", "amicacina", "gentamicina", "ampicilina", "cipro", "levo", "metronidazol", "bactrim", "fluconazol", "micafungina", "anidulafungina"],
+    "SEDA": ["sedado", "sedação", "rass", "propofol", "fentanil", "midazolam", "precedex", "ketamina", "cetamina", "pancuronio", "cisatracurio", "sem sedação"],
+    "DIETA": ["dieta", "npt", "jejum", "oral", "enteral", "sne", "gtt", "parenteral", "suspensa", "liberada"],
+    "DVA": ["dva", "noradrenalina", "nora", "vasopressina", "vaso", "dobuta", "dobutamina", "nipride", "tridil", "adrenalina", "sem drogas vasoativas"],
+    "TEMP": ["febril", "afebril", "tax", "curva térmica", "pico febril"],
+    "VENT": ["tot", "tqt", "vni", "cateter", "cn", "máscara", "venturi", "macronebu", "eupneico", "ar ambiente", "aa", "vm via", "bipap", "cpap"],
+    "RITMO": ["ritmo sinusal", "fibrilação atrial", "fa ", "bradicardia", "taquicardia", "ritmo de marcapasso"],
+    "PERFUSAO": ["bem perfundido", "má perfusão", "tec <", "tec >", "mottling"]
+}
+
 TERMOS_PROTEGIDOS = [
-    "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", "mcg/kg/min", "ml/h", 
-    "ml/kg", "ml/kg/h", "L/min", "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
+    "s/n", "S/N", "mg/dL", "g/dL", "U/L", "U/ml", 
+    "mcg/kg/min", "ml/h", "ml/kg", "ml/kg/h", "L/min", 
+    "c/d", "s/d", "A/C", "P/F", "b/min", "bpm", 
     "24/24h", "12/12h", "AA", "PO", "SVD", "CN", "TOT", "TQT"
 ]
 
@@ -171,17 +183,44 @@ DB_FRASES = {
 }
 
 # ==============================================================================
-# 2. FUNÇÕES DE SUPORTE E LIMPEZA
+# 2. FUNÇÕES DE SUPORTE
 # ==============================================================================
 
 def buscar_valor_antigo(texto, chave):
+    """
+    Nova lógica robusta:
+    1. Captura a cadeia inteira de valores (ex: 140 > 135 > 138)
+    2. Identifica se termina com 'R' ou 'reposto'
+    3. Retorna o valor correto (seja o último número ou o número+R)
+    """
     if not texto: return None
     termos = SINONIMOS_BUSCA.get(chave, [chave.lower()])
+    
     for t in termos:
-        match = re.search(rf"\b{re.escape(t)}[:=]?\s+((?:\d+[.,]?\d*\s*)+)", texto.lower().replace(",", "."))
+        # Padrão: Nome do exame + (números, setas, traços, espaços OU as palavras R/reposto)
+        # O padrão para apenas quando encontra uma letra que não faz parte de "Reposto"
+        pattern = rf"\b{re.escape(t)}[:=]?\s+([0-9.,\s>\-Rreposto]+)"
+        
+        match = re.search(pattern, texto, re.IGNORECASE)
         if match:
-            nums = [n for n in match.group(1).split() if n[0].isdigit()]
-            return nums[-1] if nums else None
+            cadeia = match.group(1).strip()
+            
+            # Verifica se o final da cadeia tem indicação de reposição
+            # Ex: "3.5 - R" ou "3.5 reposto"
+            match_reposto = re.search(r'([0-9.,]+)\s*[-–]?\s*(R|reposto)$', cadeia, re.IGNORECASE)
+            
+            if match_reposto:
+                # Se for reposto, retornamos "Valor - R"
+                val = match_reposto.group(1)
+                indicador = match_reposto.group(2)
+                # Padroniza para "Valor - R"
+                return f"{val} - {indicador}"
+            else:
+                # Se não for reposto, pega o último número da cadeia (ex: 140 > 135 -> pega 135)
+                numeros = re.findall(r'[0-9.,]+', cadeia)
+                if numeros:
+                    return numeros[-1]
+                    
     return None
 
 def processar_frase_ui(frase_base, complemento_usuario, dados_extra):
@@ -230,15 +269,38 @@ def extrair_texto_anterior(texto_completo):
         resultado[chave] = conteudo
     return resultado
 
+def limpar_conflitos_semanticos(texto_antigo, frases_novas):
+    if not texto_antigo or not frases_novas: return texto_antigo
+    
+    grupos_acionados = set()
+    for frase in frases_novas:
+        frase_lower = frase.lower()
+        for grupo, palavras in GRUPOS_CONFLITO.items():
+            if any(p in frase_lower for p in palavras):
+                grupos_acionados.add(grupo)
+    
+    if not grupos_acionados: return texto_antigo
+    
+    sentencas_antigas = re.split(r'(?<=\.)\s+', texto_antigo)
+    sentencas_finais = []
+    
+    for sentenca in sentencas_antigas:
+        sentenca_lower = sentenca.lower()
+        deletar = False
+        for grupo in grupos_acionados:
+            palavras_grupo = GRUPOS_CONFLITO[grupo]
+            if any(p in sentenca_lower for p in palavras_grupo):
+                deletar = True
+                break
+        if not deletar:
+            sentencas_finais.append(sentenca)
+            
+    return " ".join(sentencas_finais).strip()
+
 def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
-    """
-    Remove padrões de vitais antigos (TAX, Diurese, BH) se novos forem fornecidos.
-    Se novos Labs forem fornecidos, remove o bloco de labs antigo.
-    """
     if not texto: return ""
     novo_texto = texto
     
-    # 1. Limpa Vitais (Se houver novos)
     if dados_novos.get('tax'):
         novo_texto = re.sub(r"TAX:\s*[\d.,]+\s*ºC?", "", novo_texto, flags=re.IGNORECASE)
     if dados_novos.get('quant'):
@@ -246,14 +308,10 @@ def limpar_dados_antigos(texto, dados_novos, limpar_labs=False):
     if dados_novos.get('bh'):
         novo_texto = re.sub(r"BH:\s*[+-]?\s*[\d.,]+", "", novo_texto, flags=re.IGNORECASE)
         
-    # 2. Limpa Labs (Se houver novos, remove o bloco antigo inteiro para substituir pelo novo)
     if limpar_labs:
-        # Remove [Labs: ... ]
         novo_texto = re.sub(r"\[Labs:.*?\]", "", novo_texto, flags=re.IGNORECASE)
-        # Remove "Dados:" se ele ficar solto no final
         novo_texto = re.sub(r"Dados:\s*$", "", novo_texto.strip())
 
-    # Limpeza de pontuação dupla residual
     novo_texto = re.sub(r"\.\s*\.", ".", novo_texto)
     novo_texto = re.sub(r"\s+", " ", novo_texto)
     return novo_texto.strip()
@@ -277,7 +335,7 @@ with st.sidebar:
 dados_vitais = {"tax": tax, "quant": diurese, "bh": bh}
 texto_antigo_parseado = extrair_texto_anterior(txt_ant)
 
-# --- ABA DE LABORATÓRIOS ---
+# --- LABS ---
 with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     cols = [col1, col2, col3, col4]
@@ -305,7 +363,7 @@ with st.expander("🧪 LABORATÓRIOS (Comparativo)", expanded=True):
     outros = st.text_input("Outros Exames")
     if outros: labs_preenchidos["Outros"] = outros
 
-# --- SISTEMAS CLÍNICOS ---
+# --- SISTEMAS ---
 sistemas = ["CONTEXTO", "NEURO", "RESP", "CARDIO", "TGI", "RENAL", "INFECTO", "GERAL"]
 blocos_finais = {}
 condutas_detectadas = []
@@ -314,20 +372,16 @@ rastreador_uso = set()
 st.markdown("---")
 
 for sis in sistemas:
-    # 1. Recupera anterior
     prev_text_raw = texto_antigo_parseado.get(sis, "")
-    
-    # 2. Verifica se tem novos labs para este sistema (para acionar a limpeza)
     tem_novos_labs_sis = False
     mapa_abrev = MAPA_EXAMES_SISTEMA.get(sis, {})
     for k in mapa_abrev:
         if k in labs_preenchidos: tem_novos_labs_sis = True
     if sis == "INFECTO" and "Outros" in labs_preenchidos: tem_novos_labs_sis = True
     
-    # 3. Limpa o texto anterior (remove vitais velhos e labs velhos SE houver novos)
-    prev_text = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
+    prev_text_limpo_dados = limpar_dados_antigos(prev_text_raw, dados_vitais, limpar_labs=tem_novos_labs_sis)
     
-    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text[:40]}...)" if prev_text else ""), expanded=False):
+    with st.expander(f"**{sis}**" + (f" (Anterior: {prev_text_limpo_dados[:40]}...)" if prev_text_limpo_dados else ""), expanded=False):
         
         escolhas = st.multiselect(
             f"Selecione as frases para {sis}:", 
@@ -369,16 +423,21 @@ for sis in sistemas:
             
         complemento = st.text_input(f"Complemento / Texto Livre ({sis})", key=f"comp_{sis}")
         
+        if frases_do_sistema:
+            prev_text_limpo_conflitos = limpar_conflitos_semanticos(prev_text_limpo_dados, frases_do_sistema)
+        else:
+            prev_text_limpo_conflitos = prev_text_limpo_dados
+
         partes = frases_do_sistema[:]
         if complemento: partes.append(complemento)
             
-        # Lógica: Se não marcou nada, mantém anterior (JÁ LIMPO). Se marcou, substitui.
-        if not partes and prev_text:
-            texto_final_sis = prev_text
+        if not partes and prev_text_limpo_conflitos:
+            texto_final_sis = prev_text_limpo_conflitos
+        elif partes and prev_text_limpo_conflitos:
+            texto_final_sis = f"{prev_text_limpo_conflitos} {'. '.join(partes)}"
         else:
             texto_final_sis = ". ".join(partes)
             
-        # Append Vitais (novos)
         extras = []
         if sis == "INFECTO" and "tax" not in rastreador_uso and tax:
             extras.append(f"TAX: {tax}ºC")
@@ -390,7 +449,6 @@ for sis in sistemas:
             add = ". ".join(extras)
             texto_final_sis = f"{texto_final_sis}. {add}" if texto_final_sis else add
 
-        # Append Labs (novos)
         l_txt = []
         for nome_interno, abreviacao in mapa_abrev.items():
             if nome_interno in labs_preenchidos:
@@ -400,7 +458,6 @@ for sis in sistemas:
             
         if l_txt:
             l_str = " [Labs: " + " | ".join(l_txt) + "]"
-            # Se já tiver um bloco de labs (pode ter vindo do texto anterior se não limpamos), não duplica
             if l_str not in texto_final_sis:
                 texto_final_sis = (texto_final_sis + "." + l_str) if texto_final_sis else ("Dados: " + l_str)
 
